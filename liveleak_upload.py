@@ -4,8 +4,13 @@ import requests
 import re
 import mimetypes
 import os.path as P
+import sys
 import time
+import xml.etree.ElementTree as ET
+import urllib
 
+from StringIO import StringIO
+from lxml import etree
 from liveleak_cookies import COOKIES
 
 def extract_multipart_params(html):
@@ -48,9 +53,19 @@ def extract_multipart_params(html):
         # Strip quotes
         #
         key = re.sub(r"^\s*'", "", re.sub(r"'\s*$", "", key))
-        value = re.sub(r"^\s*'", "", re.sub(r"',\s*$", "", value))
-        multipart_params[key] = value
+        value = re.sub(r"^\s*'", "", re.sub(r"',?\s*$", "", value))
+        multipart_params[str(key)] = str(value)
     return multipart_params
+
+def extract_connection(html):
+    #
+    # Get the connection number (the value of the hidden input below):
+    #
+    # <input id="connection" name="connection" value="772_1405579810" type="hidden"/>
+    #
+    root = etree.parse(StringIO(html), etree.HTMLParser())
+    connection = root.xpath("//input[@id='connection']")
+    return connection[0].get("value")
 
 def mangle_filename(filename):
     #
@@ -67,7 +82,14 @@ def mangle_filename(filename):
     timestamp = time.time()
     return fixed_file_name_part + "_" + str(timestamp) + extension
 
-def upload_file(path, multipart_params):
+def upload_file(path, multipart_params, connect_string):
+    """Returns a dictionary of response elements that looks like this:
+
+        {'ETag': '"df809b08ccff73d5234ef079b8af46f2"', 
+        'Bucket': 'llbucs', 
+        'Location': 
+        'https://llbucs.s3.amazonaws.com/2014%2FJul%2F16%2FLiveLeak-dot-com-2f3_1405564338-foremancif_1405580103.51.mp4', 
+        'Key': '2014/Jul/16/LiveLeak-dot-com-2f3_1405564338-foremancif_1405580103.51.mp4'}"""
     boundary = "----WebKitFormBoundarymNf7g3wD3ATtvrKC"
     #
     # These have to be in the right order
@@ -85,20 +107,54 @@ def upload_file(path, multipart_params):
       "Accept-Encoding": "gzip,deflate,sdch",
       "Host": "llbucs.s3.amazonaws.com",
       "Accept-Language": "en-US,en;q=0.8,ja;q=0.6,ru;q=0.4",
-      "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.153 Safari/537.36",
+      "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.153 Safari/537.36", # TODO: we shouldn't be faking this...
       "Content-Type": content_type,
       "Accept": "*/*",
       "Referer": "http://www.liveleak.com/item?a=add_item",
       "Connection": "keep-alive",
-      "Content-Length": len(content)
-    }
+      "Content-Length": len(content)}
 
-    url = "https://llbucs.s3.amazonaws.com/"
-    r = requests.post(url, cookies=COOKIES, headers=headers, data=content)
+    r = requests.post("https://llbucs.s3.amazonaws.com/", cookies=COOKIES, headers=headers, data=content)
+    print "upload_file POST", r.status_code
+    print "<amazon_response_text>"
+    print r.text
+    print "<amazon_response_text>"
+
+    assert r.status_code == 201, "upload failed"
+
+    root = ET.fromstring(r.text)
+    amazon_response = {}
+    for key in "Location Bucket Key ETag".split(" "):
+        amazon_response[key] = root.find(key).text
+
+    print "<amazon_response>"
+    print amazon_response
+    print "</amazon_response>"
+
+    query_params = {"a": "add_file",
+            "ajax": 1,
+            "connect_string": connect_string,
+            "s3_key": amazon_response["Key"],
+            "fn": urllib.quote(filename),
+            "resp": urllib.quote(r.text)}
+
+    print "<query_params>"
+    print query_params
+    print "</query_params>"
+
+    r = requests.get("http://www.liveleak.com/file", params=query_params, cookies=COOKIES)
     print r.status_code
-    with open("response.html", "w") as fout:
-        fout.write(r.text)
 
+    print "<file_add_file>"
+    print r.text
+    print "</file_add_file>"
+
+    #
+    # TODO: parse JSON and check status here
+    #
+
+#
+# TODO: is there a way to get requests to handle this for us?
 #
 # Taken from http://code.activestate.com/recipes/146306/
 # http://stackoverflow.com/questions/1270518/python-standard-library-to-post-multipart-form-data-encoded-data
@@ -119,7 +175,7 @@ def encode_multipart_formdata(fields, files, boundary):
     for (key, filename, value) in files:
         L.append('--' + boundary)
         L.append('Content-Disposition: form-data; name="%s"; filename="%s"' % (key, filename))
-        L.append('Content-Type: %s' % get_content_type(filename))
+        L.append('Content-Type: %s' % mimetypes.guess_type(filename)[0] or 'application/octet-stream')
         L.append('')
         L.append(value)
     L.append('--' + boundary + '--')
@@ -128,11 +184,75 @@ def encode_multipart_formdata(fields, files, boundary):
     content_type = 'multipart/form-data; boundary=%s' % boundary
     return content_type, body
 
-def get_content_type(filename):
-    return mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+def upload(path, title, body, tags):
+    r = requests.get("http://www.liveleak.com/item?a=add_item", cookies=COOKIES)
+    print r.status_code
+    with open("add_item.html", "w") as fout:
+        fout.write(r.text)
+    assert r.status_code == 200, "failed to fetch add_item form"
 
-with open("test/add_item.html") as fin:
-    html = fin.read()
-multipart_params = extract_multipart_params(html)
-import sys
-upload_file(sys.argv[1], multipart_params)
+    multipart_params = extract_multipart_params(r.text)
+    print "<multipart_params>"
+    print multipart_params
+    print "</multipart_params>"
+
+    connection = extract_connection(r.text)
+    print "<connection>"
+    print connection
+    print "</connection>"
+
+    connect_string = re.search("connect_string=(?P<connect_string>[^&]+)", r.text).group("connect_string")
+    print "<connect_string>"
+    print connect_string
+    print "</connect_string>"
+
+    upload_response = upload_file(path, multipart_params, connect_string)
+
+    #
+    # Publish the item
+    #
+    data = {"title": title, 
+            "body_text": body, 
+            "tag_string": tags,
+            "category_array%5B%5D": 2, # TODO: work out how to pass this correctly
+            "address": "",
+            "location_id": 0,
+            "is_private": 0,
+            "disable_risky_commenters": 0,
+            "content_rating": "MA",
+            "occurrence_date_string": "",
+            "enable_financial_support": 0,
+            "financial_support_paypal_email": "",
+            "financial_support_bitcoin_address": "",
+            "agreed_to_tos": "on",
+            "connection": connection
+        }
+
+    r = requests.post("http://www.liveleak.com/item?a=add_item&ajax=1", data=data, cookies=COOKIES)
+    print "add_item POST", r.status_code
+    print "<add_item_post>"
+    print r.text
+    print "</add_item_post>"
+
+def create_parser():
+    from optparse import OptionParser
+    p = OptionParser("usage: %prog [options] video.mp4")
+    p.add_option("-d", "--debug", dest="debug", type="int", default=0, help="Set the debug level")
+    p.add_option("-t", "--title", dest="title", type="string", default=None, help="Specify the title")
+    p.add_option("-b", "--body", dest="body", type="string", default=None, help="Specify the body")
+    p.add_option("-T", "--tags", dest="tags", type="string", default=None, help="Specify the tags")
+    return p
+
+def main():
+    parser = create_parser()
+    opts, args = parser.parse_args()
+    if len(args) != 1:
+        parser.error("invalid number of arguments")
+    path = args[0]
+    title = opts.title if opts.title else path
+    body = opts.title if opts.title else path
+    tags = opts.title if opts.tags else path
+    upload(path, title, body, tags)
+
+if __name__ == "__main__":
+    main()
