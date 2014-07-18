@@ -42,3 +42,7 @@ In repost mode, the bot reposts download videos to LiveLeak.
 
 Note that the bot will not keep running after it completes its particular task.
 To have it run periodically, use something like [cron](http://en.wikipedia.org/wiki/Cron).
+For cron, the following lines will run the bot every 10 minutes:
+
+    0/10 * * * * python /home/misha/git/reddit-liveleak-bot/bot.py /home/misha/git/reddit-liveleak-bot/db.sqlite3 monitor
+    0/10 * * * * python /home/misha/git/reddit-liveleak-bot/bot.py /home/misha/git/reddit-liveleak-bot/db.sqlite3 repost
