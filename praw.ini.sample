@@ -1,0 +1,5 @@
+[DEFAULT]
+domain: www.reddit.com
+ssl_domain: ssl.reddit.com
+user: your_username
+pswd: your_password
