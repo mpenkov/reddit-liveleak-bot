@@ -12,7 +12,7 @@ from liveleak_upload import LiveLeakUploader
 
 COMMENT = """Hi!
 I'm a bot.
-I download YouTube videos that get posted here, and repost them to [LiveLeaks](http://www.liveleaks.com) in case they get deleted later on.
+I download YouTube videos that get posted here, and repost them to [LiveLeak](http://www.liveleak.com) in case they get deleted later on.
 
 I've downloaded this video and am considering reposting it.
 Do you think it is worth reposting?
@@ -20,7 +20,7 @@ If yes, please let me know by upvoting this comment.
 If no, please let me know by downvoting this comment.
 
 If I repost videos that I shouldn't repost, I'll get in trouble!
-Please don't let me repost such videos, for example
+Please don't let me repost such videos, for example:
 
  - Things I obviously don't own copyright for (e.g. VICE News)
  - Videos that aren't interesting enough
@@ -30,7 +30,7 @@ Thank you!
 
 If there's any sort of problem, please do not hesitate to contact [my master](https://github.com/mpenkov/reddit-liveleak-bot)."""
 
-UPDATED_COMMENT = "\n\n**EDIT**: [Mirror](http://www.liveleak.com/view?i=%s)"
+UPDATED_COMMENT = "\n\n**EDIT**: The people have spoken! The mirror is [here](http://www.liveleak.com/view?i=%s)."
 
 """The minimum number of upvotes in order to consider reposting."""
 UPS_THRESHOLD = 10
@@ -93,14 +93,16 @@ class Bot(object):
         for (youtube_id, submission_id, attempts) in c.execute("""SELECT youTubeId, redditSubmissionId, downloadAttempts
             FROM Videos
             WHERE LocalPath IS NULL AND downloadAttempts < 3""").fetchall():
+
+            cc = self.conn.cursor()
+            cc.execute("UPDATE Videos SET downloadAttempts = ? WHERE youTubeId = ?", (attempts+1, youtube_id))
+
             template = P.join(self.dest_dir, "%(id)s.%(ext)s")
             args = ["youtube-dl", youtube_id, "--quiet", "--output", template]
             return_code = sub.call(args)
             print " ".join(args)
             if return_code != 0:
                 print "download failed for YouTube video ID:", youtube_id
-                cc = self.conn.cursor()
-                cc.execute("UPDATE Videos SET downloadAttempts = ? WHERE youTubeId = ?", (attempts+1, youtube_id))
                 continue
 
             #
@@ -111,11 +113,13 @@ class Bot(object):
             for f in os.listdir(self.dest_dir):
                 if f.startswith(youtube_id):
                     dest_file = P.join(self.dest_dir, f)
+                    break
+
             if dest_file:
                 c.execute("UPDATE Videos SET LocalPath = ? WHERE youTubeId = ?", (dest_file, youtube_id))
+                submission = self.r.get_submission(submission_id=submission_id)
+                submission.add_comment(COMMENT)
 
-            submission = self.r.get_submission(submission_id=submission_id)
-            submission.add_comment(COMMENT)
         c.close()
         self.conn.commit()
 
@@ -127,24 +131,23 @@ class Bot(object):
         me = self.r.get_redditor(self.reddit_username)
         comments = {}
         for comment in me.get_comments():
-            if not comment.body.startswith("Hi! I'm a bot"):
+            if not comment.body == COMMENT:
                 continue
-            #
-            # TODO: assume the parent is the submission, not some other comment.
-            # Currently, this assumption is valid.
-            #
-            if comment.ups > UPS_THRESHOLD:
+            if comment.ups-comment.downs > UPS_THRESHOLD:
                 comments[comment.submission.id] = comment
 
         c = self.conn.cursor()
         uploader = LiveLeakUploader()
         uploader.login(self.liveleak_username, self.liveleak_password)
 
-        for submission_id in sorted(comments, key=lambda x: comments[x].ups, reverse=True):
+        for submission_id in sorted(comments, key=lambda x: comments[x].ups-comments[x].downs, reverse=True):
+            #
+            # TODO: do we really need the notified field?
+            #
             row = c.execute("""
                 SELECT youTubeId, liveLeakId, localPath, subreddit, redditTitle
                 FROM Videos
-                WHERE LocalPath IS NOT NULL AND redditSubmissionId = ?""", (submission_id,)).fetchone()
+                WHERE LocalPath IS NOT NULL AND redditSubmissionId = ? AND notified IS NULL""", (submission_id,)).fetchone()
 
             if row == None:
                 continue
@@ -152,7 +155,7 @@ class Bot(object):
 
             if not liveleak_id:
                 submission = self.r.get_submission(submission_id=submission_id)
-                body = "reposted from YouTube ID: %s, reddit submission: %s" % (youtube_id, submission.url)
+                body = "repost of http://youtube.com/watch?v=%s from %s" % (youtube_id, submission.url)
                 try:
                     liveleak_id = uploader.upload(local_path, title, body, subreddit)
                 except:
@@ -163,7 +166,7 @@ class Bot(object):
             updated_text = comments[submission_id].body + (UPDATED_COMMENT % liveleak_id)
             comments[submission_id].edit(updated_text)
 
-            c.execute("UPDATE Videos SET notified = ? WHERE youTubeId = ?", (youtube_id, datetime.datetime.now()))
+            c.execute("UPDATE Videos SET notified = ? WHERE youTubeId = ?", (datetime.datetime.now(), youtube_id))
 
         c.close()
         self.conn.commit()
