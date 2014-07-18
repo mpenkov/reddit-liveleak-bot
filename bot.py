@@ -117,7 +117,7 @@ def create_parser(usage):
     """Create an object to use for the parsing of command-line arguments."""
     from optparse import OptionParser
     parser = OptionParser(usage)
-    parser.add_option("-l", "--limit", dest="limit", type="int", default="10", help="Set the limit for fetching submissions when monitoring")
+    parser.add_option("-l", "--limit", dest="limit", type="int", default="100", help="Set the limit for fetching submissions when monitoring")
     parser.add_option("-d", "--dest-dir", dest="dest_dir", type="string", default=None, help="Specify the destination directory for downloaded videos")
     return parser
 
