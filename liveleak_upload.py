@@ -8,6 +8,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 import urllib
+import json
 
 from StringIO import StringIO
 from lxml import etree
@@ -55,6 +56,7 @@ def extract_multipart_params(html):
         key = re.sub(r"^\s*'", "", re.sub(r"'\s*$", "", key))
         value = re.sub(r"^\s*'", "", re.sub(r"',?\s*$", "", value))
         multipart_params[str(key)] = str(value)
+    assert multipart_params
     return multipart_params
 
 def extract_connection(html):
@@ -67,7 +69,16 @@ def extract_connection(html):
     connection = root.xpath("//input[@id='connection']")
     return connection[0].get("value")
 
-def mangle_filename(filename):
+def upload_file(path, multipart_params, connect_string):
+    """Upload a file to AWS.
+    
+    Returns True on success, False otherwise."""
+    boundary = "----WebKitFormBoundarymNf7g3wD3ATtvrKC"
+    #
+    # These have to be in the right order
+    #
+    #fields = multipart_params.items()
+    filename = P.basename(path)
     #
     # This is from the add_item JavaScript
     #
@@ -80,24 +91,10 @@ def mangle_filename(filename):
     fixed_file_name_part, extension = P.splitext(filename)
     fixed_file_name_part = "".join([ch for ch in fixed_file_name_part if ch.isalnum()])
     timestamp = time.time()
-    return fixed_file_name_part + "_" + str(timestamp) + extension
+    filename = fixed_file_name_part + "_" + str(timestamp) + extension
 
-def upload_file(path, multipart_params, connect_string):
-    """Returns a dictionary of response elements that looks like this:
-
-        {'ETag': '"df809b08ccff73d5234ef079b8af46f2"', 
-        'Bucket': 'llbucs', 
-        'Location': 
-        'https://llbucs.s3.amazonaws.com/2014%2FJul%2F16%2FLiveLeak-dot-com-2f3_1405564338-foremancif_1405580103.51.mp4', 
-        'Key': '2014/Jul/16/LiveLeak-dot-com-2f3_1405564338-foremancif_1405580103.51.mp4'}"""
-    boundary = "----WebKitFormBoundarymNf7g3wD3ATtvrKC"
-    #
-    # These have to be in the right order
-    #
-    #fields = multipart_params.items()
-    filename = P.basename(path)
     multipart_params["name"] = filename
-    multipart_params["key"] = multipart_params["key"].replace("${filename}", mangle_filename(filename))
+    multipart_params["key"] = multipart_params["key"].replace("${filename}", filename)
     fields = "name key Filename acl Expires Content-Type success_action_status AWSAccessKeyId policy signature".split(" ")
     fields = ((name, multipart_params[name]) for name in fields)
     files = [("file", filename, open(path, "rb").read())]
@@ -120,7 +117,8 @@ def upload_file(path, multipart_params, connect_string):
     print r.text
     print "<amazon_response_text>"
 
-    assert r.status_code == 201, "upload failed"
+    if r.status_code != 201:
+        return False
 
     root = ET.fromstring(r.text)
     amazon_response = {}
@@ -149,9 +147,14 @@ def upload_file(path, multipart_params, connect_string):
     print r.text
     print "</file_add_file>"
 
-    #
-    # TODO: parse JSON and check status here
-    #
+    obj = json.loads(r.text)
+    if obj["success"] != 1:
+        raise Exception(obj["msg"])
+
+    print "<file_add_file_json>"
+    for key in obj:
+        print key, obj[key]
+    print "</file_add_file_json>"
 
 #
 # TODO: is there a way to get requests to handle this for us?
@@ -206,7 +209,7 @@ def upload(path, title, body, tags):
     print connect_string
     print "</connect_string>"
 
-    upload_response = upload_file(path, multipart_params, connect_string)
+    upload_file(path, multipart_params, connect_string)
 
     #
     # Publish the item
