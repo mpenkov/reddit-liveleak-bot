@@ -31,6 +31,7 @@ def main():
             subreddit TEXT NOT NULL,
             redditTitle TEXT NOT NULL,
             downloadAttempts INTEGER,
+            notified DATETIME,
             FOREIGN KEY (RedditSubmissionId) REFERENCES RedditSubmissions(id)
         )""")
     c.close()
@@ -38,4 +39,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
