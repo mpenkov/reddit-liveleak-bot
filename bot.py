@@ -93,7 +93,16 @@ class Bot(object):
         for (youtube_id, local_path, subreddit, title) in c.execute("""SELECT youTubeId, localPath, subreddit, redditTitle
             FROM Videos 
             WHERE LocalPath IS NOT NULL AND LiveLeakId IS NULL"""):
-            uploader.upload(local_path, title, "reposted from YouTube ID: " + youtube_id, subreddit)
+            #
+            # TODO: handle exceptions on upload
+            #
+            item_token = uploader.upload(local_path, title, "reposted from YouTube ID: " + youtube_id, subreddit)
+            c.execute("UPDATE Videos SET liveLeakId = ? WHERE youTubeId = ?", (item_token, youtube_id))
+
+            #
+            # TODO: post a comment under the original entry
+            #
+
 
 def create_parser(usage):
     """Create an object to use for the parsing of command-line arguments."""

@@ -75,11 +75,17 @@ class LiveLeakUploader(object):
 
         r = requests.post("http://www.liveleak.com/item?a=add_item&ajax=1", data=data, cookies=self.cookies)
 
-        if debug:
+        if self.debug_level:
             print "add_item POST", r.status_code
             print "<add_item_post>"
             print r.text
             print "</add_item_post>"
+
+        obj = json.loads(r.text)
+        if obj["success"] != 1:
+            raise Exception(obj["msg"])
+
+        return obj["item_token"]
 
     def __aws_upload(self, path, multipart_params, connect_string):
         """Upload a file to AWS. Raises Exception on failure."""
@@ -93,9 +99,13 @@ class LiveLeakUploader(object):
         fixed_file_name_part, extension = P.splitext(filename)
         fixed_file_name_part = "".join([ch for ch in fixed_file_name_part if ch.isalnum()])
         timestamp = time.time()
-        filename = fixed_file_name_part + "_" + str(timestamp) + extension
+        #
+        # Filename must be a raw Python string (not unicode)
+        #
+        filename = str(fixed_file_name_part + "_" + str(timestamp) + extension)
         multipart_params["name"] = filename
         multipart_params["key"] = multipart_params["key"].replace("${filename}", filename)
+
 
         #
         # Fields must be in the right order.
