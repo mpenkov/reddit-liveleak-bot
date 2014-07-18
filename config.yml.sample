@@ -1,3 +1,6 @@
 liveleak:
     username: your_username
     password: your_password
+reddit:
+    username: your_username
+    password: your_password

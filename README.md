@@ -21,8 +21,8 @@ On Ubuntu, you can install these with:
 Configuration
 -------------
 
-There are two configuration files that the bot uses: praw.ini and config.yml.
-You can see sample configurations in praw.ini.sample and config.yml.sample, respectively.
+Edit the configuration file config.yml.
+You can use config.yml.sample as a base.
 
 Running
 -------

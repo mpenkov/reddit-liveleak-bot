@@ -18,8 +18,6 @@ def extract_youtube_id(url):
 
 class Bot(object):
     def __init__(self, dbpath, dest_dir, limit):
-        self.r = praw.Reddit("Mirror YouTube videos to LiveLeak by u/mishapenkov v 0.1\nURL: https://github.com/mpenkov/reddit-liveleak-bot")
-        self.r.login()
         self.limit = limit
         self.conn = sqlite3.connect(dbpath)
         self.dest_dir = dest_dir
@@ -32,7 +30,11 @@ class Bot(object):
 
         self.liveleak_username = doc["liveleak"]["username"]
         self.liveleak_password = doc["liveleak"]["password"]
+        self.reddit_username = doc["reddit"]["username"]
+        self.reddit_password = doc["reddit"]["password"]
 
+        self.r = praw.Reddit("Mirror YouTube videos to LiveLeak by u/mishapenkov v 0.1\nURL: https://github.com/mpenkov/reddit-liveleak-bot")
+        self.r.login(self.reddit_username, self.reddit_password)
 
     def monitor(self, subreddit):
         """Monitors the specific subreddit for submissions that link to YouTube videos."""
@@ -90,7 +92,8 @@ class Bot(object):
         c = self.conn.cursor()
         uploader = LiveLeakUploader()
         uploader.login(self.liveleak_username, self.liveleak_password)
-        for (youtube_id, local_path, subreddit, title) in c.execute("""SELECT youTubeId, localPath, subreddit, redditTitle
+        for (youtube_id, local_path, subreddit, title, submission_id) in c.execute("""
+            SELECT youTubeId, localPath, subreddit, redditTitle, redditSubmissionId
             FROM Videos 
             WHERE LocalPath IS NOT NULL AND LiveLeakId IS NULL"""):
             #
@@ -99,10 +102,16 @@ class Bot(object):
             item_token = uploader.upload(local_path, title, "reposted from YouTube ID: " + youtube_id, subreddit)
             c.execute("UPDATE Videos SET liveLeakId = ? WHERE youTubeId = ?", (item_token, youtube_id))
 
-            #
-            # TODO: post a comment under the original entry
-            #
+            submission = self.r.get_submission(submission_id=submission_id)
+            comment = "[Mirror](http://www.liveleak.com/view?i=%s)" % item_token
+            submission.add_comment(comment)
 
+    def notify(self):
+        c = self.conn.cursor()
+        for (submission_id, liveleak_id) in c.execute("SELECT redditSubmissionId, liveleakId FROM Videos WHERE liveleakId IS NOT NULL").fetchall():
+            submission = self.r.get_submission(submission_id=submission_id)
+            comment = "[Mirror](http://www.liveleak.com/view?i=%s)" % liveleak_id
+            submission.add_comment(comment)
 
 def create_parser(usage):
     """Create an object to use for the parsing of command-line arguments."""
