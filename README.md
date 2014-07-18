@@ -27,16 +27,13 @@ You can see sample configurations in praw.ini.sample and config.yml.sample, resp
 Running
 -------
 
-The bot runs in three modes: monitor, download, and repost.
+The bot runs in two modes: monitor and repost.
 
     python bot.py db.sqlite monitor
 
 In monitor mode, the bot goes through subreddits and picks out submissions with links to YouTube.
 It registers these submissions in a database.
-
-    python bot.py db.sqlite download
-
-In download mode, the bot goes through its database and downloads videos that haven't been downloaded yet.
+It then downloads these videos.
 If a download fails, the bot will try again next time, up until a certain number of retries, after which it will ignore the video forever.
 
     python bot.py db.sqlite repost

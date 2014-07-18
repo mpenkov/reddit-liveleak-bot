@@ -118,7 +118,7 @@ def main():
     if len(args) != 2:
         parser.error("invalid number of arguments")
     dbpath, action = args
-    if action not in "monitor download repost".split(" "):
+    if action not in "monitor repost".split(" "):
         parser.error("invalid action: %s" % action)
 
     dest_dir = options.dest_dir if options.dest_dir else P.join(P.dirname(P.abspath(__file__)), "videos")
@@ -127,13 +127,11 @@ def main():
     if action == "monitor":
         for subreddit in "UkrainianConflict ukraina".split(" "):
             bot.monitor(subreddit)
-    elif action == "download":
         bot.download()
     elif action == "repost":
         bot.repost()
     else:
         assert False, "not implemented yet"
-
 
 if __name__ == "__main__":
     main()
