@@ -1,4 +1,4 @@
-liveleak_cookies.py
 *.pyc
 *.swp
 praw.ini
+config.yml.sample

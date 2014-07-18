@@ -5,8 +5,9 @@ import datetime
 import subprocess as sub
 import os
 import os.path as P
+import yaml
 
-from liveleak_upload import upload
+from liveleak_upload import LiveLeakUploader
 
 def extract_youtube_id(url):
     """Extract a YouTube ID from a URL."""
@@ -25,6 +26,13 @@ class Bot(object):
 
         if not P.isdir(self.dest_dir):
             os.makedirs(self.dest_dir)
+
+        with open(P.join(P.dirname(P.abspath(__file__)), "config.yml")) as fin:
+            doc = yaml.load(fin)
+
+        self.liveleak_username = doc["liveleak"]["username"]
+        self.liveleak_password = doc["liveleak"]["password"]
+
 
     def monitor(self, subreddit):
         """Monitors the specific subreddit for submissions that link to YouTube videos."""
@@ -80,10 +88,12 @@ class Bot(object):
 
     def repost(self):
         c = self.conn.cursor()
+        uploader = LiveLeakUploader()
+        uploader.login(self.liveleak_username, self.liveleak_password)
         for (youtube_id, local_path, subreddit, title) in c.execute("""SELECT youTubeId, localPath, subreddit, redditTitle
             FROM Videos 
             WHERE LocalPath IS NOT NULL AND LiveLeakId IS NULL"""):
-            upload(local_path, title, "reposted from YouTube ID: " + youtube_id, subreddit)
+            uploader.upload(local_path, title, "reposted from YouTube ID: " + youtube_id, subreddit)
 
 def create_parser(usage):
     """Create an object to use for the parsing of command-line arguments."""
