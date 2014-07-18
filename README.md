@@ -46,3 +46,10 @@ For cron, the following lines will run the bot every 10 minutes:
 
     0/10 * * * * python /home/misha/git/reddit-liveleak-bot/bot.py /home/misha/git/reddit-liveleak-bot/db.sqlite3 monitor
     0/10 * * * * python /home/misha/git/reddit-liveleak-bot/bot.py /home/misha/git/reddit-liveleak-bot/db.sqlite3 repost
+
+TODO
+----
+
+ - Stop faking User-Agent when uploading to AWS (LiveLeaks)
+ - Proper category (News, Middle East, etc) -- currently defaulting to "World News"
+ - Proper content rating -- currently defaulting to MA
