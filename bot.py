@@ -6,8 +6,34 @@ import subprocess as sub
 import os
 import os.path as P
 import yaml
+import traceback
 
 from liveleak_upload import LiveLeakUploader
+
+COMMENT = """Hi!
+I'm a bot.
+I download YouTube videos that get posted here, and repost them to [LiveLeaks](http://www.liveleaks.com) in case they get deleted later on.
+
+I've downloaded this video and am considering reposting it.
+Do you think it is worth reposting?
+If yes, please let me know by upvoting this comment.
+If no, please let me know by downvoting this comment.
+
+If I repost videos that I shouldn't repost, I'll get in trouble!
+Please don't let me repost such videos, for example
+
+ - Things I obviously don't own copyright for (e.g. VICE News)
+ - Videos that aren't interesting enough
+ - Videos that aren't controversial and are thus unlikely to ever be deleted
+
+Thank you!
+
+If there's any sort of problem, please do not hesitate to contact [my master](https://github.com/mpenkov/reddit-liveleak-bot)."""
+
+UPDATED_COMMENT = "\n\n**EDIT**: [Mirror](http://www.liveleak.com/view?i=%s)"
+
+"""The minimum number of upvotes in order to consider reposting."""
+UPS_THRESHOLD = 10
 
 def extract_youtube_id(url):
     """Extract a YouTube ID from a URL."""
@@ -33,7 +59,7 @@ class Bot(object):
         self.reddit_username = doc["reddit"]["username"]
         self.reddit_password = doc["reddit"]["password"]
 
-        self.r = praw.Reddit("Mirror YouTube videos to LiveLeak by u/mishapenkov v 0.1\nURL: https://github.com/mpenkov/reddit-liveleak-bot")
+        self.r = praw.Reddit("Mirror YouTube videos to LiveLeak by u/mishapenkov v 1.0\nURL: https://github.com/mpenkov/reddit-liveleak-bot")
         self.r.login(self.reddit_username, self.reddit_password)
 
     def monitor(self, subreddit):
@@ -56,15 +82,16 @@ class Bot(object):
                 print "skipping YouTube video ID:", youtube_id
                 continue
 
-            c.execute("INSERT INTO Videos VALUES (?, NULL, NULL, ?, ?, ?, 0)", (youtube_id, submission.id, subreddit, submission.title))
+            c.execute("INSERT INTO Videos VALUES (?, NULL, NULL, ?, ?, ?, 0, NULL)", (youtube_id, submission.id, subreddit, submission.title))
+
         c.close()
         self.conn.commit()
 
     def download(self):
         """Downloads videos that have not yet been downloaded."""
         c = self.conn.cursor()
-        for (youtube_id, attempts) in c.execute("""SELECT youTubeId, downloadAttempts 
-            FROM Videos 
+        for (youtube_id, submission_id, attempts) in c.execute("""SELECT youTubeId, redditSubmissionId, downloadAttempts
+            FROM Videos
             WHERE LocalPath IS NULL AND downloadAttempts < 3""").fetchall():
             template = P.join(self.dest_dir, "%(id)s.%(ext)s")
             args = ["youtube-dl", youtube_id, "--quiet", "--output", template]
@@ -75,6 +102,7 @@ class Bot(object):
                 cc = self.conn.cursor()
                 cc.execute("UPDATE Videos SET downloadAttempts = ? WHERE youTubeId = ?", (attempts+1, youtube_id))
                 continue
+
             #
             # TODO: is there a better way to work out what the local file name is?
             # We know the ID but don't know the extension
@@ -85,33 +113,60 @@ class Bot(object):
                     dest_file = P.join(self.dest_dir, f)
             if dest_file:
                 c.execute("UPDATE Videos SET LocalPath = ? WHERE youTubeId = ?", (dest_file, youtube_id))
+
+            submission = self.r.get_submission(submission_id=submission_id)
+            submission.add_comment(COMMENT)
         c.close()
         self.conn.commit()
 
     def repost(self):
+        """Go through all our comments.
+        Find the videos that people want reposted the most.
+        Repost them.
+        Notify once successful."""
+        me = self.r.get_redditor(self.reddit_username)
+        comments = {}
+        for comment in me.get_comments():
+            if not comment.body.startswith("Hi! I'm a bot"):
+                continue
+            #
+            # TODO: assume the parent is the submission, not some other comment.
+            # Currently, this assumption is valid.
+            #
+            if comment.ups > UPS_THRESHOLD:
+                comments[comment.submission.id] = comment
+
         c = self.conn.cursor()
         uploader = LiveLeakUploader()
         uploader.login(self.liveleak_username, self.liveleak_password)
-        for (youtube_id, local_path, subreddit, title, submission_id) in c.execute("""
-            SELECT youTubeId, localPath, subreddit, redditTitle, redditSubmissionId
-            FROM Videos 
-            WHERE LocalPath IS NOT NULL AND LiveLeakId IS NULL"""):
-            #
-            # TODO: handle exceptions on upload
-            #
-            item_token = uploader.upload(local_path, title, "reposted from YouTube ID: " + youtube_id, subreddit)
-            c.execute("UPDATE Videos SET liveLeakId = ? WHERE youTubeId = ?", (item_token, youtube_id))
 
-            submission = self.r.get_submission(submission_id=submission_id)
-            comment = "[Mirror](http://www.liveleak.com/view?i=%s)" % item_token
-            submission.add_comment(comment)
+        for submission_id in sorted(comments, key=lambda x: comments[x].ups, reverse=True):
+            row = c.execute("""
+                SELECT youTubeId, liveLeakId, localPath, subreddit, redditTitle
+                FROM Videos
+                WHERE LocalPath IS NOT NULL AND redditSubmissionId = ?""", (submission_id,)).fetchone()
 
-    def notify(self):
-        c = self.conn.cursor()
-        for (submission_id, liveleak_id) in c.execute("SELECT redditSubmissionId, liveleakId FROM Videos WHERE liveleakId IS NOT NULL").fetchall():
-            submission = self.r.get_submission(submission_id=submission_id)
-            comment = "[Mirror](http://www.liveleak.com/view?i=%s)" % liveleak_id
-            submission.add_comment(comment)
+            if row == None:
+                continue
+            youtube_id, liveleak_id, local_path, subreddit, title = row
+
+            if not liveleak_id:
+                submission = self.r.get_submission(submission_id=submission_id)
+                body = "reposted from YouTube ID: %s, reddit submission: %s" % (youtube_id, submission.url)
+                try:
+                    liveleak_id = uploader.upload(local_path, title, body, subreddit)
+                except:
+                    print traceback.format_exc()
+                    break
+                c.execute("UPDATE Videos SET liveLeakId = ? WHERE youTubeId = ?", (liveleak_id, youtube_id))
+
+            updated_text = comments[submission_id].body + (UPDATED_COMMENT % liveleak_id)
+            comments[submission_id].edit(updated_text)
+
+            c.execute("UPDATE Videos SET notified = ? WHERE youTubeId = ?", (youtube_id, datetime.datetime.now()))
+
+        c.close()
+        self.conn.commit()
 
 def create_parser(usage):
     """Create an object to use for the parsing of command-line arguments."""
@@ -134,7 +189,7 @@ def main():
 
     bot = Bot(dbpath, dest_dir, options.limit)
     if action == "monitor":
-        for subreddit in "UkrainianConflict ukraina".split(" "):
+        for subreddit in ["UkrainianConflict"]:
             bot.monitor(subreddit)
         bot.download()
     elif action == "repost":
