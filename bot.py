@@ -35,6 +35,8 @@ UPDATED_COMMENT = "\n\n**EDIT**: The people have spoken! The mirror is [here](ht
 """The minimum number of upvotes in order to consider reposting."""
 UPS_THRESHOLD = 10
 
+HOLD_HOURS = 48
+
 def extract_youtube_id(url):
     """Extract a YouTube ID from a URL."""
     m = re.search(r"youtube.com/watch\?v=(?P<id>\w{11})", url)
@@ -66,7 +68,13 @@ class Bot(object):
         """Monitors the specific subreddit for submissions that link to YouTube videos."""
         c = self.conn.cursor()
         submissions = self.r.get_subreddit(subreddit).get_top(limit=self.limit)
+        cutoff = datetime.datetime.now() - datetime.timedelta(hours=HOLD_HOURS)
         for submission in submissions:
+            #
+            # Ignore items older than HOLD_HOURS hours
+            #
+            if datetime.datetime.fromtimestamp(submission.created_utc) < cutoff:
+                continue
             if c.execute("SELECT id FROM RedditSubmissions WHERE id = ?", (submission.id,)).fetchone():
                 #print "skipping submission ID:", submission.id
                 continue
@@ -175,6 +183,51 @@ class Bot(object):
         c.close()
         self.conn.commit()
 
+    def purge(self):
+        """Remove all data older than HOLD_HOURS hours from the database and the hard disk."""
+        old_submissions = []
+        c = self.conn.cursor()
+        cutoff = datetime.datetime.now() - datetime.timedelta(hours=HOLD_HOURS)
+        for (submission_id, discovered) in c.execute("SELECT id, discovered FROM redditSubmissions").fetchall():
+            #
+            # 2014-07-20 00:40:26.489840
+            #
+            if datetime.datetime.strptime(discovered, "%Y-%m-%d %H:%M:%S.%f") < cutoff:
+                old_submissions.append(submission_id)
+                #print submission_id, discovered
+
+        #
+        # TODO: keep this mapping in the videos table of the DB
+        #
+        me = self.r.get_redditor(self.reddit_username)
+        comments = {}
+        for comment in me.get_comments():
+            if comment.body.startswith(COMMENT[:10]):
+                comments[comment.submission.id] = comment
+
+        for submission_id in old_submissions:
+            row = c.execute("SELECT localPath, liveLeakId FROM videos WHERE redditSubmissionId = ?", (submission_id,)).fetchone()
+            if row is None:
+                continue
+            local_path, liveleak_id = row
+
+            #
+            # Remove comments for that submission if there was no repost to LiveLeak
+            #
+            if liveleak_id is None:
+                try:
+                    comment = comments[submission_id]
+                    comment.delete()
+                    print "deleting comment", comment.ups-comment.downs
+                except KeyError:
+                    continue
+
+            c.execute("DELETE FROM videos WHERE redditSubmissionId = ?", (submission_id,))
+            c.execute("DELETE FROM redditSubmissions WHERE id = ?", (submission_id,))
+
+            print "removing", local_path
+            os.remove(local_path)
+
 def create_parser(usage):
     """Create an object to use for the parsing of command-line arguments."""
     from optparse import OptionParser
@@ -189,7 +242,7 @@ def main():
     if len(args) != 2:
         parser.error("invalid number of arguments")
     dbpath, action = args
-    if action not in "monitor repost".split(" "):
+    if action not in "monitor repost purge".split(" "):
         parser.error("invalid action: %s" % action)
 
     dest_dir = options.dest_dir if options.dest_dir else P.join(P.dirname(P.abspath(__file__)), "videos")
@@ -201,6 +254,8 @@ def main():
         bot.download()
     elif action == "repost":
         bot.repost()
+    elif action == "purge":
+        bot.purge()
     else:
         assert False, "not implemented yet"
 
