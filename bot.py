@@ -68,7 +68,7 @@ class Bot(object):
         submissions = self.r.get_subreddit(subreddit).get_top(limit=self.limit)
         for submission in submissions:
             if c.execute("SELECT id FROM RedditSubmissions WHERE id = ?", (submission.id,)).fetchone():
-                print "skipping submission ID:", submission.id
+                #print "skipping submission ID:", submission.id
                 continue
 
             c.execute("INSERT INTO RedditSubmissions VALUES (?, ?)", (submission.id, datetime.datetime.now()))
@@ -79,7 +79,7 @@ class Bot(object):
                 continue
 
             if c.execute("SELECT youTubeId FROM Videos WHERE youTubeId = ?", (youtube_id,)).fetchone():
-                print "skipping YouTube video ID:", youtube_id
+                #print "skipping YouTube video ID:", youtube_id
                 continue
 
             c.execute("INSERT INTO Videos VALUES (?, NULL, NULL, ?, ?, ?, 0, NULL)", (youtube_id, submission.id, subreddit, submission.title))
