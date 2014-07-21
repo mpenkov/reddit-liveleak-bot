@@ -175,6 +175,8 @@ class Bot(object):
                     break
                 c.execute("UPDATE Videos SET liveLeakId = ? WHERE youTubeId = ?", (liveleak_id, youtube_id))
 
+            print "reposted", liveleak_id
+
             updated_text = comments[submission_id].body + (UPDATED_COMMENT % liveleak_id)
             comments[submission_id].edit(updated_text)
 
