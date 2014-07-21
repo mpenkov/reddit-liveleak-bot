@@ -131,7 +131,11 @@ class Bot(object):
         me = self.r.get_redditor(self.reddit_username)
         comments = {}
         for comment in me.get_comments():
-            if not comment.body == COMMENT:
+            #
+            # TODO: why doesn't the comment text match completely here?
+            #
+            #print comment.submission.id, comment.submission.title[:10], comment.ups-comment.downs
+            if not comment.body.startswith(COMMENT[:10]):
                 continue
             if comment.ups-comment.downs > UPS_THRESHOLD:
                 comments[comment.submission.id] = comment
