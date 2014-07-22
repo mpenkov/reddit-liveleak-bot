@@ -7,13 +7,14 @@ import os
 import os.path as P
 import yaml
 import traceback
+import urllib
 
 from liveleak_upload import LiveLeakUploader
 
 COMMENT = """Hi!
 I'm a bot.
 
-I've downloaded this video and am considering reposting it to [LiveLeak](http://www.liveleak.com) in case it gets deleted from YouTube later on.
+I've downloaded [this video](%(video_url)s) and am considering reposting it to [LiveLeak](http://www.liveleak.com) in case it gets deleted from YouTube later on.
 Do you think it is worth reposting?
 If yes, please let me know by upvoting this comment.
 If no, please let me know by downvoting this comment.
@@ -21,14 +22,14 @@ If no, please let me know by downvoting this comment.
 If I repost videos that I shouldn't repost, I'll get in trouble!
 Please don't let me repost such videos, for example:
 
- - Videos that have been already posted to LiveLeak. Please [check](http://www.liveleak.com) first!
+ - Videos that have been already posted to LiveLeak. Please [check](http://www.liveleak.com/browse?%(querystring)s) first!
  - Videos that I obviously don't own copyright for (e.g. VICE News)
  - Videos that aren't interesting enough
  - Videos that aren't controversial and are thus unlikely to ever be deleted
 
 Thank you!
 
-If there's any sort of problem, please do not hesitate to contact [my master](https://github.com/mpenkov/reddit-liveleak-bot)."""
+If there's any sort of problem, please do not hesitate to contact [my master](https://github.com/mpenkov/reddit-liveleak-bot/issues)."""
 
 UPDATED_COMMENT = "\n\n**EDIT**: The people have spoken! The mirror is [here](http://www.liveleak.com/view?i=%s)."
 
@@ -98,7 +99,7 @@ class Bot(object):
     def download(self):
         """Downloads videos that have not yet been downloaded."""
         c = self.conn.cursor()
-        for (youtube_id, submission_id, attempts) in c.execute("""SELECT youTubeId, redditSubmissionId, downloadAttempts
+        for (youtube_id, submission_id, title, attempts) in c.execute("""SELECT youTubeId, redditSubmissionId, redditTitle, downloadAttempts
             FROM Videos
             WHERE LocalPath IS NULL AND downloadAttempts < 3""").fetchall():
 
@@ -126,7 +127,7 @@ class Bot(object):
             if dest_file:
                 c.execute("UPDATE Videos SET LocalPath = ? WHERE youTubeId = ?", (dest_file, youtube_id))
                 submission = self.r.get_submission(submission_id=submission_id)
-                submission.add_comment(COMMENT)
+                submission.add_comment(COMMENT % {"video_url": "http://youtu.be/%s" % youtube_id, "querystring": urllib.urlencode([("q", title)])})
 
         c.close()
         self.conn.commit()
