@@ -40,7 +40,7 @@ HOLD_HOURS = 48
 
 def extract_youtube_id(url):
     """Extract a YouTube ID from a URL."""
-    m = re.search(r"youtube.com/watch\?v=(?P<id>\w{11})", url)
+    m = re.search(r"youtu\.?be.*(v=|/)(?P<id>[a-zA-Z0-9-_]{11})&?", url)
     if m:
         return m.group("id")
     return None

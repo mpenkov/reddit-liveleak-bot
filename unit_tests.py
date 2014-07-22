@@ -16,7 +16,7 @@ class TestExtractYouTubeId(unittest.TestCase):
 
     def test_underscore(self):
         url = "https://www.youtube.com/watch?v=-8_0eAME3Xw"
-        self.assertEquals(extract_youtube_id(url), "8_0eAME3Xw")
+        self.assertEquals(extract_youtube_id(url), "-8_0eAME3Xw")
 
     def test_hyphen(self):
         url = "http://www.youtube.com/watch?v=N-gPAMeXlQk"
