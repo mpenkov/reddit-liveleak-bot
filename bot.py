@@ -43,9 +43,8 @@ def extract_youtube_id(url):
     return None
 
 class Bot(object):
-    def __init__(self, dbpath, dest_dir, limit):
+    def __init__(self, dest_dir, limit):
         self.limit = limit
-        self.conn = sqlite3.connect(dbpath)
         self.dest_dir = dest_dir
 
         if not P.isdir(self.dest_dir):
@@ -58,6 +57,8 @@ class Bot(object):
         self.liveleak_password = doc["liveleak"]["password"]
         self.reddit_username = doc["reddit"]["username"]
         self.reddit_password = doc["reddit"]["password"]
+
+        self.conn = sqlite3.connect(doc["dbpath"])
 
         self.r = praw.Reddit("Mirror YouTube videos to LiveLeak by u/mishapenkov v 1.0\nURL: https://github.com/mpenkov/reddit-liveleak-bot")
         self.r.login(self.reddit_username, self.reddit_password)
@@ -237,17 +238,17 @@ def create_parser(usage):
     return parser
 
 def main():
-    parser = create_parser("usage: %s file.sqlite3 action [options]" % __file__)
+    parser = create_parser("usage: %s action [options]" % __file__)
     options, args = parser.parse_args()
-    if len(args) != 2:
+    if len(args) != 1:
         parser.error("invalid number of arguments")
-    dbpath, action = args
+    action = args[0]
     if action not in "monitor repost purge".split(" "):
         parser.error("invalid action: %s" % action)
 
     dest_dir = options.dest_dir if options.dest_dir else P.join(P.dirname(P.abspath(__file__)), "videos")
 
-    bot = Bot(dbpath, dest_dir, options.limit)
+    bot = Bot(dest_dir, options.limit)
     if action == "monitor":
         for subreddit in ["UkrainianConflict"]:
             bot.monitor(subreddit)
