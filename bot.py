@@ -13,19 +13,16 @@ from liveleak_upload import LiveLeakUploader
 
 COMMENT = """Hi!
 I'm a bot.
-
 I've downloaded [this video](%(video_url)s) and am considering reposting it to [LiveLeak](http://www.liveleak.com) in case it gets deleted from YouTube later on.
-Do you think it is worth reposting?
-If yes, please let me know by upvoting this comment.
-If no, please let me know by downvoting this comment.
+
+Do you think it is worth reposting? Upvote for "yes"; downvote for "no".
 
 If I repost videos that I shouldn't repost, I'll get in trouble!
 Please don't let me repost such videos, for example:
 
  - Videos that have been already posted to LiveLeak. Please [check](http://www.liveleak.com/browse?%(querystring)s) first!
  - Videos that I obviously don't own copyright for (e.g. VICE News)
- - Videos that aren't interesting enough
- - Videos that aren't controversial and are thus unlikely to ever be deleted
+ - Videos that aren't interesting or controversial, and are thus unlikely to ever be deleted
 
 Thank you!
 
