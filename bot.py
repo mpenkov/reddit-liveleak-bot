@@ -33,7 +33,7 @@ UPDATED_COMMENT = "\n\n**EDIT**: The people have spoken! The mirror is [here](ht
 """The minimum number of upvotes in order to consider reposting."""
 UPS_THRESHOLD = 10
 
-HOLD_HOURS = 48
+HOLD_HOURS = 24
 
 def extract_youtube_id(url):
     """Extract a YouTube ID from a URL."""
