@@ -1,7 +1,14 @@
+---
 dbpath: /path/to/db.sqlite3
+videopath: /path/to/videos/subdir
 liveleak:
     username: your_username
     password: your_password
 reddit:
     username: your_username
     password: your_password
+ups_threshold: 10           # The minimum score for a comment in order to consider reposting
+hold_hours: 72              # The number of hours to hold videos before purging
+subreddits:
+    - UkrainianConflict
+limit: 100                  # The number of submissions to fetch at any one time

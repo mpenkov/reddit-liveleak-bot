@@ -16,11 +16,6 @@ Upvote for "yes"; downvote for "no" (if unsure, read the [FAQ](http://www.reddit
 
 UPDATED_COMMENT = "\n\n**EDIT**: The mirror is [here](http://www.liveleak.com/view?i=%s)."
 
-"""The minimum number of upvotes in order to consider reposting."""
-UPS_THRESHOLD = 10
-
-HOLD_HOURS = 72
-
 def extract_youtube_id(url):
     """Extract a YouTube ID from a URL."""
     m = re.search(r"youtu\.?be.*(v=|/)(?P<id>[a-zA-Z0-9-_]{11})&?", url)
@@ -29,31 +24,40 @@ def extract_youtube_id(url):
     return None
 
 class Bot(object):
-    def __init__(self, dest_dir, limit):
-        self.limit = limit
-        self.dest_dir = dest_dir
+    def __init__(self, config_path=None):
+        if config_path is None:
+            config_path = P.join(P.dirname(P.abspath(__file__)), "config.yml")
+        with open(config_path) as fin:
+            doc = yaml.load(fin)
+        self.limit = int(doc["limit"])
+        self.dest_dir = doc["videopath"]
 
         if not P.isdir(self.dest_dir):
             os.makedirs(self.dest_dir)
-
-        with open(P.join(P.dirname(P.abspath(__file__)), "config.yml")) as fin:
-            doc = yaml.load(fin)
 
         self.liveleak_username = doc["liveleak"]["username"]
         self.liveleak_password = doc["liveleak"]["password"]
         self.reddit_username = doc["reddit"]["username"]
         self.reddit_password = doc["reddit"]["password"]
 
+        self.hold_hours = int(doc["hold_hours"])
+        self.subreddits = doc["subreddits"]
+
         self.conn = sqlite3.connect(doc["dbpath"])
 
         self.r = praw.Reddit("Mirror YouTube videos to LiveLeak by u/mishapenkov v 1.0\nURL: https://github.com/mpenkov/reddit-liveleak-bot")
         self.r.login(self.reddit_username, self.reddit_password)
 
-    def monitor(self, subreddit):
+    def monitor(self):
+        """Monitor all subreddits."""
+        for subreddit in self.subreddits:
+            self.monitor_subreddit(subreddit)
+
+    def monitor_subreddit(self, subreddit):
         """Monitors the specific subreddit for submissions that link to YouTube videos."""
         c = self.conn.cursor()
         submissions = self.r.get_subreddit(subreddit).get_top(limit=self.limit)
-        cutoff = datetime.datetime.now() - datetime.timedelta(hours=HOLD_HOURS)
+        cutoff = datetime.datetime.now() - datetime.timedelta(hours=self.hold_hours)
         for submission in submissions:
             #
             # Ignore items older than HOLD_HOURS hours
@@ -128,7 +132,7 @@ class Bot(object):
             # TODO: why doesn't the comment text match completely here?
             #
             #print comment.submission.id, comment.submission.title[:10], comment.ups-comment.downs
-            if comment.ups-comment.downs > UPS_THRESHOLD:
+            if comment.ups-comment.downs > self.ups_threshold:
                 comments[comment.submission.id] = comment
 
         c = self.conn.cursor()
@@ -173,7 +177,7 @@ class Bot(object):
         """Remove all data older than HOLD_HOURS hours from the database and the hard disk."""
         old_submissions = []
         c = self.conn.cursor()
-        cutoff = datetime.datetime.now() - datetime.timedelta(hours=HOLD_HOURS)
+        cutoff = datetime.datetime.now() - datetime.timedelta(hours=self.hold_hours)
         for (submission_id, discovered) in c.execute("SELECT id, discovered FROM redditSubmissions").fetchall():
             #
             # 2014-07-20 00:40:26.489840
@@ -227,8 +231,7 @@ def create_parser(usage):
     """Create an object to use for the parsing of command-line arguments."""
     from optparse import OptionParser
     parser = OptionParser(usage)
-    parser.add_option("-l", "--limit", dest="limit", type="int", default="100", help="Set the limit for fetching submissions when monitoring")
-    parser.add_option("-d", "--dest-dir", dest="dest_dir", type="string", default=None, help="Specify the destination directory for downloaded videos")
+    parser.add_option("-c", "--config", dest="config", type="string", default=None, help="Specify the configuration file to use")
     return parser
 
 def main():
@@ -240,12 +243,9 @@ def main():
     if action not in "monitor repost purge".split(" "):
         parser.error("invalid action: %s" % action)
 
-    dest_dir = options.dest_dir if options.dest_dir else P.join(P.dirname(P.abspath(__file__)), "videos")
-
-    bot = Bot(dest_dir, options.limit)
+    bot = Bot(options.config)
     if action == "monitor":
-        for subreddit in ["UkrainianConflict"]:
-            bot.monitor(subreddit)
+        bot.monitor()
         bot.download()
     elif action == "repost":
         bot.repost()
