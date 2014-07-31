@@ -12,7 +12,7 @@ import urllib
 from liveleak_upload import LiveLeakUploader
 
 COMMENT = """Hi!
-I'm a bot.
+I'm a [bot](http://www.reddit.com/r/redditliveleakbot/wiki/index).
 I've downloaded [this video](%(video_url)s) and am considering reposting it to [LiveLeak](http://www.liveleak.com) in case it gets deleted from YouTube later on.
 
 Do you think it is worth reposting? Upvote for "yes"; downvote for "no".
@@ -24,11 +24,9 @@ Please don't let me repost such videos, for example:
  - Videos that I obviously don't own copyright for (e.g. VICE News)
  - Videos that aren't interesting or controversial, and are thus unlikely to ever be deleted
 
-Thank you!
+Thank you!"""
 
-If there's any sort of problem, please do not hesitate to contact [my master](https://github.com/mpenkov/reddit-liveleak-bot/issues)."""
-
-UPDATED_COMMENT = "\n\n**EDIT**: The people have spoken! The mirror is [here](http://www.liveleak.com/view?i=%s)."
+UPDATED_COMMENT = "\n\n**EDIT**: The mirror is [here](http://www.liveleak.com/view?i=%s)."
 
 """The minimum number of upvotes in order to consider reposting."""
 UPS_THRESHOLD = 10
