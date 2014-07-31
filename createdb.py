@@ -22,17 +22,17 @@ def main():
     conn = sqlite3.connect(dbpath)
     c = conn.cursor()
 
-    c.execute("CREATE TABLE RedditSubmissions (id TEXT PRIMARY KEY, discovered DATETIME)")
-    c.execute("""CREATE TABLE Videos ( 
-            youTubeId TEXT PRIMARY KEY NOT NULL,
-            localPath TEXT, 
-            liveLeakId TEXT,
+    c.execute("CREATE TABLE redditSubmissions (id TEXT PRIMARY KEY, discovered DATETIME)")
+    c.execute("""CREATE TABLE videos (
+            youtubeId TEXT PRIMARY KEY NOT NULL,
+            localPath TEXT,
+            liveleakId TEXT,
             redditSubmissionId TEXT NOT NULL,
             subreddit TEXT NOT NULL,
             redditTitle TEXT NOT NULL,
             downloadAttempts INTEGER,
             notified DATETIME,
-            FOREIGN KEY (RedditSubmissionId) REFERENCES RedditSubmissions(id)
+            FOREIGN KEY (redditSubmissionId) REFERENCES redditSubmissions(id)
         )""")
     c.close()
     conn.commit()
