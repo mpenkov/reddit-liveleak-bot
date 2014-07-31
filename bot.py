@@ -58,7 +58,7 @@ class Bot(object):
     def monitor_subreddit(self, subreddit):
         """Monitors the specific subreddit for submissions that link to YouTube videos."""
         c = self.conn.cursor()
-        submissions = self.r.get_subreddit(subreddit).get_top(limit=self.limit)
+        submissions = self.r.get_subreddit(subreddit).get_new(limit=self.limit)
         cutoff = datetime.datetime.now() - datetime.timedelta(hours=self.hold_hours)
         for submission in submissions:
             #
