@@ -164,7 +164,8 @@ class Bot(object):
 
             if not liveleak_id:
                 submission = self.r.get_submission(submission_id=submission_id)
-                body = "repost of http://youtube.com/watch?v=%s from %s" % (youtube_id, submission.url)
+                body = "repost of http://youtube.com/watch?v=%s from %s" % (youtube_id, submission.permalink)
+                print body
                 try:
                     liveleak_id = uploader.upload(local_path, title, body, subreddit)
                 except:
