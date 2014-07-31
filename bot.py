@@ -41,6 +41,7 @@ class Bot(object):
         self.reddit_password = doc["reddit"]["password"]
 
         self.hold_hours = int(doc["hold_hours"])
+        self.ups_threshold = doc["ups_threshold"]
         self.subreddits = doc["subreddits"]
 
         self.conn = sqlite3.connect(doc["dbpath"])
