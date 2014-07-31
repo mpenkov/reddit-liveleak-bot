@@ -225,8 +225,17 @@ class Bot(object):
             c.execute("DELETE FROM videos WHERE redditSubmissionId = ?", (submission_id,))
             c.execute("DELETE FROM redditSubmissions WHERE id = ?", (submission_id,))
 
-            print "removing", local_path
-            os.remove(local_path)
+            #
+            # TODO: in theory, multiple submissions can link to the same video
+            # How to handle this properly?
+            #
+            if P.isfile(local_path):
+                print "removing", local_path
+                try:
+                    os.remove(local_path)
+                except OSError:
+                    print traceback.format_exc()
+                    pass
 
 def create_parser(usage):
     """Create an object to use for the parsing of command-line arguments."""
