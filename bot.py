@@ -91,7 +91,7 @@ class Bot(object):
             cc.execute("UPDATE Videos SET downloadAttempts = ? WHERE youTubeId = ?", (attempts+1, youtube_id))
 
             template = P.join(self.dest_dir, "%(id)s.%(ext)s")
-            args = ["youtube-dl", youtube_id, "--quiet", "--output", template]
+            args = ["youtube-dl", "--quiet", "--output", template, "--", youtube_id]
             return_code = sub.call(args)
             print " ".join(args)
             if return_code != 0:
