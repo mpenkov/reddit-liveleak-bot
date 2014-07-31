@@ -125,7 +125,7 @@ class Bot(object):
             if dest_file:
                 c.execute("UPDATE Videos SET LocalPath = ? WHERE youTubeId = ?", (dest_file, youtube_id))
                 submission = self.r.get_submission(submission_id=submission_id)
-                submission.add_comment(COMMENT % {"video_url": "http://youtu.be/%s" % youtube_id, "querystring": urllib.urlencode([("q", title)])})
+                submission.add_comment(COMMENT % {"video_url": "http://youtu.be/%s" % youtube_id, "querystring": urllib.urlencode([("q", title.encode("utf-8"))])})
 
         c.close()
         self.conn.commit()
