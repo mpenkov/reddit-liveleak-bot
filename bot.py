@@ -31,7 +31,7 @@ UPDATED_COMMENT = "\n\n**EDIT**: The mirror is [here](http://www.liveleak.com/vi
 """The minimum number of upvotes in order to consider reposting."""
 UPS_THRESHOLD = 10
 
-HOLD_HOURS = 24
+HOLD_HOURS = 72
 
 def extract_youtube_id(url):
     """Extract a YouTube ID from a URL."""
