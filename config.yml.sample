@@ -4,6 +4,7 @@ videopath: /path/to/videos/subdir
 liveleak:
     username: your_username
     password: your_password
+    dummy: false            # If set to true, won't actually post anything to LiveLeak. For testing only.
 reddit:
     username: your_username
     password: your_password

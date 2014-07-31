@@ -37,11 +37,12 @@ class Bot(object):
 
         self.liveleak_username = doc["liveleak"]["username"]
         self.liveleak_password = doc["liveleak"]["password"]
+        self.liveleak_dummy = doc["liveleak"]["dummy"]
         self.reddit_username = doc["reddit"]["username"]
         self.reddit_password = doc["reddit"]["password"]
 
-        self.hold_hours = int(doc["hold_hours"])
         self.ups_threshold = doc["ups_threshold"]
+        self.hold_hours = doc["hold_hours"]
         self.subreddits = doc["subreddits"]
 
         self.conn = sqlite3.connect(doc["dbpath"])
@@ -158,7 +159,10 @@ class Bot(object):
                 body = "repost of http://youtube.com/watch?v=%s from %s" % (youtube_id, submission.permalink)
                 print body
                 try:
-                    liveleak_id = uploader.upload(local_path, title, body, subreddit)
+                    if self.liveleak_dummy:
+                        liveleak_id = "dummy"
+                    else:
+                        liveleak_id = uploader.upload(local_path, title, body, subreddit)
                 except:
                     print traceback.format_exc()
                     break
