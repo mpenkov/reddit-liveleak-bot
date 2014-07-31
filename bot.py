@@ -11,20 +11,8 @@ import urllib
 
 from liveleak_upload import LiveLeakUploader
 
-COMMENT = """Hi!
-I'm a [bot](http://www.reddit.com/r/redditliveleakbot/wiki/index).
-I've downloaded [this video](%(video_url)s) and am considering reposting it to [LiveLeak](http://www.liveleak.com) in case it gets deleted from YouTube later on.
-
-Do you think it is worth reposting? Upvote for "yes"; downvote for "no".
-
-If I repost videos that I shouldn't repost, I'll get in trouble!
-Please don't let me repost such videos, for example:
-
- - Videos that have been already posted to LiveLeak. Please [check](http://www.liveleak.com/browse?%(querystring)s) first!
- - Videos that I obviously don't own copyright for (e.g. VICE News)
- - Videos that aren't interesting or controversial, and are thus unlikely to ever be deleted
-
-Thank you!"""
+COMMENT = """Should I repost this video to LiveLeak?
+Upvote for "yes"; downvote for "no" (if unsure, read the [FAQ](http://www.reddit.com/r/redditliveleakbot/wiki/index#wiki_q.3A_what_kind_of_videos_should_not_be_reposted.3F))."""
 
 UPDATED_COMMENT = "\n\n**EDIT**: The mirror is [here](http://www.liveleak.com/view?i=%s)."
 
@@ -140,8 +128,6 @@ class Bot(object):
             # TODO: why doesn't the comment text match completely here?
             #
             #print comment.submission.id, comment.submission.title[:10], comment.ups-comment.downs
-            if not comment.body.startswith(COMMENT[:10]):
-                continue
             if comment.ups-comment.downs > UPS_THRESHOLD:
                 comments[comment.submission.id] = comment
 
