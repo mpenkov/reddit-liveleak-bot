@@ -8,13 +8,28 @@ import os.path as P
 import yaml
 import traceback
 import urllib
+import re
+import collections
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.exc import NoResultFound
+
+from orm import Submission, Mention, Video
 from liveleak_upload import LiveLeakUploader
 
-COMMENT = """Should I repost this video to LiveLeak?
-Upvote for "yes"; downvote for "no" (if unsure, read the [FAQ](http://www.reddit.com/r/redditliveleakbot/wiki/index#wiki_q.3A_what_kind_of_videos_should_not_be_reposted.3F))."""
+STATE_DISCOVERED = 1
+STATE_DOWNLOADED = 2
+STATE_REPOSTED = 3
+STATE_STALE = 4
 
-UPDATED_COMMENT = "\n\n**EDIT**: The mirror is [here](http://www.liveleak.com/view?i=%s)."
+MENTION_REGEX = re.compile(r"redditliveleakbot \+(?P<command>\w+)", re.IGNORECASE)
+
+COMMENT = """[**Mirror**](http://www.liveleak.com/view?i=%s) 
+
+---
+
+^| [^Feedback](http://www.reddit.com/r/redditliveleakbot/) ^| [^FAQ](http://www.reddit.com/r/redditliveleakbot/wiki/index) ^|"""
 
 def extract_youtube_id(url):
     """Extract a YouTube ID from a URL."""
@@ -45,192 +60,172 @@ class Bot(object):
         self.hold_hours = doc["hold_hours"]
         self.subreddits = doc["subreddits"]
 
-        self.conn = sqlite3.connect(doc["dbpath"])
+        engine = create_engine(doc["dbpath"])
+        Session = sessionmaker(bind=engine)
+        self.session = Session()
 
-        self.r = praw.Reddit("Mirror YouTube videos to LiveLeak by u/mishapenkov v 1.0\nURL: https://github.com/mpenkov/reddit-liveleak-bot")
+        self.r = praw.Reddit("Mirror YouTube videos to LiveLeak by u/mishapenkov v 2.0\nURL: https://github.com/mpenkov/reddit-liveleak-bot")
         self.r.login(self.reddit_username, self.reddit_password)
 
     def monitor(self):
-        """Monitor all subreddits."""
+        """Monitor all subreddits specified in the config.xml file."""
         for subreddit in self.subreddits:
-            self.monitor_subreddit(subreddit)
+            self.monitor_submissions(subreddit)
+            self.download()
+            self.monitor_mentions(subreddit)
+            self.monitor_summons(subreddit)
 
-    def monitor_subreddit(self, subreddit):
+    def monitor_submissions(self, subreddit):
         """Monitors the specific subreddit for submissions that link to YouTube videos."""
-        c = self.conn.cursor()
         submissions = self.r.get_subreddit(subreddit).get_new(limit=self.limit)
-        cutoff = datetime.datetime.now() - datetime.timedelta(hours=self.hold_hours)
-        for submission in submissions:
-            #
-            # Ignore items older than HOLD_HOURS hours
-            #
-            if datetime.datetime.fromtimestamp(submission.created_utc) < cutoff:
-                continue
-            if c.execute("SELECT id FROM RedditSubmissions WHERE id = ?", (submission.id,)).fetchone():
-                #print "skipping submission ID:", submission.id
-                continue
+        for new_submission in submissions:
+            try:
+                submission = self.session.query(Submission).filter_by(id=new_submission.id).one()
+                break
+            except NoResultFound:
+                print "new_submission", new_submission
+                submission = Submission(id=new_submission.id, subreddit=subreddit, title=new_submission.title, discovered=datetime.datetime.now())
+                self.session.add(submission)
+                self.session.commit()
 
-            c.execute("INSERT INTO RedditSubmissions VALUES (?, ?)", (submission.id, datetime.datetime.now()))
-
-            youtube_id = extract_youtube_id(submission.url)
+            youtube_id = extract_youtube_id(new_submission.url)
             if youtube_id == None:
-                print "skipping submission URL:", submission.url
+                print "skipping submission URL:", new_submission.url
                 continue
 
-            if c.execute("SELECT youTubeId FROM Videos WHERE youTubeId = ?", (youtube_id,)).fetchone():
-                #print "skipping YouTube video ID:", youtube_id
+            try:
+                video = self.session.query(Video).filter_by(youtubeId=youtube_id).one()
+            except NoResultFound:
+                video = Video(youtubeId=youtube_id, state=STATE_DISCOVERED, downloadAttempts=0, lastModified=datetime.datetime.now())
+                self.session.add(video)
+
+            submission.youtubeId = youtube_id
+            self.session.commit()
+
+    def monitor_mentions(self, subreddit):
+        """Monitor the specific subreddits for comments that mention our username."""
+        for new_comment in self.r.get_subreddit(subreddit).get_comments(limit=self.limit):
+            m = MENTION_REGEX.search(new_comment.body)
+            if not m:
+                continue
+            try:
+                mention = self.session.query(Mention).filter_by(permalink=new_comment.permalink).one()
+                break
+            except NoResultFound:
+                mention = Mention(permalink=new_comment.permalink, submissionId=new_comment.submission.id, discovered=datetime.datetime.now(), command=m.group("command"), state=STATE_DISCOVERED)
+                print mention.permalink, mention.command
+                self.session.add(mention)
+                self.session.commit()
+
+    def monitor_summons(self, subreddit):
+        submission_comments = collections.defaultdict(list)
+        for mention in self.session.query(Mention).filter_by(state=STATE_DISCOVERED):
+            comment = self.r.get_submission(mention.permalink).comments[0]
+            submission_comments[comment.submission].append(comment)
+
+        uploader = LiveLeakUploader()
+        uploader.login(self.liveleak_username, self.liveleak_password)
+
+        for submission in submission_comments:
+            score = sum([x.ups-x.downs for x in submission_comments[submission]])
+            if score < self.ups_threshold:
                 continue
 
-            c.execute("INSERT INTO Videos VALUES (?, NULL, NULL, ?, ?, ?, 0, NULL)", (youtube_id, submission.id, subreddit, submission.title))
+            try:
+                old_submission, video = self.session.query(Submission, Video).filter(Submission.id==submission.id).filter(Submission.youtubeId==Video.youtubeId).filter_by(id=submission.id).one()
+            except NoResultFound:
+                #
+                # This will happen if 
+                #
+                # 1) we haven't seen the submission before or 
+                # 2) the submission doesn't have a link to a YouTube video
+                #
+                continue
 
-        c.close()
-        self.conn.commit()
+            if video.state != STATE_DOWNLOADED:
+                #
+                # This will happen if
+                #
+                # 1) The video hasn't been downloaded yet
+                # 2) The video has already been reposted
+                #
+                continue
+
+            body = "repost of http://youtube.com/watch?v=%s from %s" % (video.youtubeId, submission.permalink)
+            print body
+            try:
+                if self.liveleak_dummy:
+                    liveleak_id = "dummy"
+                else:
+                    liveleak_id = uploader.upload(video.localPath, submission.title, body, subreddit)
+            except:
+                print traceback.format_exc()
+                break
+
+            video.liveleakId = liveleak_id
+            video.state = STATE_REPOSTED
+            for mention in self.session.query(Mention).filter_by(submissionId=submission.id):
+                mention.state = STATE_REPOSTED
+            self.session.commit()
+
+            submission_comments[submission][0].reply(COMMENT % liveleak_id)
 
     def download(self):
         """Downloads videos that have not yet been downloaded."""
-        c = self.conn.cursor()
-        for (youtube_id, submission_id, title, attempts) in c.execute("""SELECT youTubeId, redditSubmissionId, redditTitle, downloadAttempts
-            FROM Videos
-            WHERE LocalPath IS NULL AND downloadAttempts < 3""").fetchall():
-
-            cc = self.conn.cursor()
-            cc.execute("UPDATE Videos SET downloadAttempts = ? WHERE youTubeId = ?", (attempts+1, youtube_id))
+        for video in self.session.query(Video).filter_by(state=STATE_DISCOVERED):
+            video.downloadAttempts += 1
+            video.lastModified = datetime.datetime.now()
+            self.session.commit()
 
             template = P.join(self.dest_dir, "%(id)s.%(ext)s")
-            args = ["youtube-dl", "--quiet", "--output", template, "--", youtube_id]
+            args = ["youtube-dl", "--quiet", "--output", template, "--", video.youtubeId]
             return_code = sub.call(args)
             print " ".join(args)
             if return_code != 0:
-                print "download failed for YouTube video ID:", youtube_id
+                print "download failed for YouTube video ID:", video.youtubeId
                 continue
 
             #
             # TODO: is there a better way to work out what the local file name is?
             # We know the ID but don't know the extension
             #
-            dest_file = None
+            video.localPath = None
             for f in os.listdir(self.dest_dir):
-                if f.startswith(youtube_id):
-                    dest_file = P.join(self.dest_dir, f)
+                if f.startswith(video.youtubeId):
+                    video.localPath = P.join(self.dest_dir, f)
                     break
+            assert video.localPath
+            video.state = STATE_DOWNLOADED
+            self.session.commit()
 
-            if dest_file:
-                c.execute("UPDATE Videos SET LocalPath = ? WHERE youTubeId = ?", (dest_file, youtube_id))
-                submission = self.r.get_submission(submission_id=submission_id)
-                submission.add_comment(COMMENT % {"video_url": "http://youtu.be/%s" % youtube_id, "querystring": urllib.urlencode([("q", title.encode("utf-8"))])})
+    def check_stale(self):
+        """Make all data that hasn't been updated in self.hold_hours hours stale."""
+        cutoff = datetime.datetime.now() - datetime.timedelta(hours=self.hold_hours)
+        for mention in self.session.query(Mention).filter_by(state=STATE_DISCOVERED):
+            if mention.discovered < cutoff:
+                mention.state = STATE_STALE
 
-        c.close()
-        self.conn.commit()
+        for video in self.session.query(Video):
+            if video.lastModified < cutoff and video.state != STATE_REPOSTED:
+                video.state = STATE_STALE
+                video.lastModified = datetime.datetime.now()
 
-    def repost(self):
-        """Go through all our comments.
-        Find the videos that people want reposted the most.
-        Repost them.
-        Notify once successful."""
-        me = self.r.get_redditor(self.reddit_username)
-        comments = {}
-        for comment in me.get_comments():
-            #
-            # TODO: why doesn't the comment text match completely here?
-            #
-            #print comment.submission.id, comment.submission.title[:10], comment.ups-comment.downs
-            if comment.ups-comment.downs > self.ups_threshold:
-                comments[comment.submission.id] = comment
-
-        c = self.conn.cursor()
-        uploader = LiveLeakUploader()
-        uploader.login(self.liveleak_username, self.liveleak_password)
-
-        for submission_id in sorted(comments, key=lambda x: comments[x].ups-comments[x].downs, reverse=True):
-            #
-            # TODO: do we really need the notified field?
-            #
-            row = c.execute("""
-                SELECT youTubeId, liveLeakId, localPath, subreddit, redditTitle
-                FROM Videos
-                WHERE LocalPath IS NOT NULL AND redditSubmissionId = ? AND notified IS NULL""", (submission_id,)).fetchone()
-
-            if row == None:
-                continue
-            youtube_id, liveleak_id, local_path, subreddit, title = row
-
-            if not liveleak_id:
-                submission = self.r.get_submission(submission_id=submission_id)
-                body = "repost of http://youtube.com/watch?v=%s from %s" % (youtube_id, submission.permalink)
-                print body
-                try:
-                    if self.liveleak_dummy:
-                        liveleak_id = "dummy"
-                    else:
-                        liveleak_id = uploader.upload(local_path, title, body, subreddit)
-                except:
-                    print traceback.format_exc()
-                    break
-                c.execute("UPDATE Videos SET liveLeakId = ? WHERE youTubeId = ?", (liveleak_id, youtube_id))
-
-            print "reposted", liveleak_id
-
-            updated_text = comments[submission_id].body + (UPDATED_COMMENT % liveleak_id)
-            comments[submission_id].edit(updated_text)
-
-            c.execute("UPDATE Videos SET notified = ? WHERE youTubeId = ?", (datetime.datetime.now(), youtube_id))
-
-        c.close()
-        self.conn.commit()
+        self.session.commit()
 
     def purge(self):
-        """Remove all data older than HOLD_HOURS hours from the database and the hard disk."""
-        old_submissions = []
-        c = self.conn.cursor()
-        cutoff = datetime.datetime.now() - datetime.timedelta(hours=self.hold_hours)
-        for (submission_id, discovered) in c.execute("SELECT id, discovered FROM redditSubmissions").fetchall():
-            #
-            # 2014-07-20 00:40:26.489840
-            #
-            if datetime.datetime.strptime(discovered, "%Y-%m-%d %H:%M:%S.%f") < cutoff:
-                old_submissions.append(submission_id)
-                #print submission_id, discovered
-
-        #
-        # TODO: keep this mapping in the videos table of the DB
-        #
-        me = self.r.get_redditor(self.reddit_username)
-        comments = {}
-        for comment in me.get_comments():
-            if comment.body.startswith(COMMENT[:10]):
-                comments[comment.submission.id] = comment
-
-        for submission_id in old_submissions:
-            row = c.execute("SELECT localPath, liveLeakId FROM videos WHERE redditSubmissionId = ?", (submission_id,)).fetchone()
-            if row is None:
-                continue
-            local_path, liveleak_id = row
-
-            #
-            # Remove comments for that submission if there was no repost to LiveLeak
-            #
-            if liveleak_id is None:
+        """Delete stale video data."""
+        for video in self.session.query(Video).filter_by(state=STATE_STALE):
+            if P.isfile(video.localPath):
+                print "removing", video.localPath
                 try:
-                    comment = comments[submission_id]
-                    comment.delete()
-                    print "deleting comment", comment.ups-comment.downs
-                except KeyError:
-                    continue
-
-            c.execute("DELETE FROM videos WHERE redditSubmissionId = ?", (submission_id,))
-            c.execute("DELETE FROM redditSubmissions WHERE id = ?", (submission_id,))
-
-            #
-            # TODO: in theory, multiple submissions can link to the same video
-            # How to handle this properly?
-            #
-            if P.isfile(local_path):
-                print "removing", local_path
-                try:
-                    os.remove(local_path)
+                    os.remove(video.localPath)
                 except OSError:
                     print traceback.format_exc()
                     pass
+
+            video.localPath = None
+            video.state = STATE_PURGED
+            video.lastModified = datetime.datetime.now()
 
 def create_parser(usage):
     """Create an object to use for the parsing of command-line arguments."""
@@ -245,15 +240,14 @@ def main():
     if len(args) != 1:
         parser.error("invalid number of arguments")
     action = args[0]
-    if action not in "monitor repost purge".split(" "):
+    if action not in "monitor check_stale purge".split(" "):
         parser.error("invalid action: %s" % action)
 
     bot = Bot(options.config)
     if action == "monitor":
         bot.monitor()
-        bot.download()
-    elif action == "repost":
-        bot.repost()
+    elif action == "check_stale":
+        bot.check_stale()
     elif action == "purge":
         bot.purge()
     else:

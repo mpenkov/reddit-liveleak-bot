@@ -1,5 +1,20 @@
 import unittest
-from bot import extract_youtube_id
+from bot import extract_youtube_id, MENTION_REGEX
+
+class TestMentionRegex(unittest.TestCase):
+    def test_positive(self):
+        text = "redditliveleakbot +repost"
+        self.assertIsNotNone(MENTION_REGEX.search(text))
+
+    def test_negative(self):
+        text = "/u/redditliveleakbot"
+        self.assertIsNone(MENTION_REGEX.search(text))
+
+        text = "redditliveleakbot"
+        self.assertIsNone(MENTION_REGEX.search(text))
+
+        text = "redditliveleakbot repost"
+        self.assertIsNone(MENTION_REGEX.search(text))
 
 class TestExtractYouTubeId(unittest.TestCase):
     def test_positive(self):

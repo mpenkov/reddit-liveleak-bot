@@ -1,5 +1,5 @@
 ---
-dbpath: /path/to/db.sqlite3
+dbpath: sqlite:////Users/misha/git/reddit-liveleak-bot/db.sqlite3
 videopath: /path/to/videos/subdir
 liveleak:
     username: your_username

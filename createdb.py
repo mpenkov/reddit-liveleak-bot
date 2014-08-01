@@ -1,41 +1,30 @@
 """Create an empty SQLite database."""
-import sqlite3
-import os
-import os.path as P
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from orm import Base
 
-def create_parser(usage):
-    """Create an object to use for the parsing of command-line arguments."""
+def create_parser():
     from optparse import OptionParser
-    parser = OptionParser(usage)
-    return parser
+    p = OptionParser("usage: %prog db.sqlite3")
+    return p
 
 def main():
-    parser = create_parser("usage: %s file.sqlite3 [options]" % __file__)
-    options, args = parser.parse_args()
+    p = create_parser()
+    opts, args = p.parse_args()
     if len(args) != 1:
-        parser.error("invalid number of arguments")
-    dbpath = args[0]
+        p.error("invalid number of arguments")
+    fname = args[0]
+    answer = raw_input("This will reset the database %s. Are you sure? " % fname)
+    if answer != "yes":
+        print "Aborting."
+        return
+    open(fname, "w").close()
+    engine = create_engine("sqlite:///"+fname)
+    Base.metadata.create_all(engine)
 
-    if P.isfile(dbpath):
-        os.remove(dbpath)
-
-    conn = sqlite3.connect(dbpath)
-    c = conn.cursor()
-
-    c.execute("CREATE TABLE redditSubmissions (id TEXT PRIMARY KEY, discovered DATETIME)")
-    c.execute("""CREATE TABLE videos (
-            youtubeId TEXT PRIMARY KEY NOT NULL,
-            localPath TEXT,
-            liveleakId TEXT,
-            redditSubmissionId TEXT NOT NULL,
-            subreddit TEXT NOT NULL,
-            redditTitle TEXT NOT NULL,
-            downloadAttempts INTEGER,
-            notified DATETIME,
-            FOREIGN KEY (redditSubmissionId) REFERENCES redditSubmissions(id)
-        )""")
-    c.close()
-    conn.commit()
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    session.commit()
 
 if __name__ == "__main__":
     main()
