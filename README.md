@@ -11,12 +11,13 @@ On top of Python 2.7 and its default libraries, you need the following libraries
  - [yaml](http://pyyaml.org/)
  - [lxml](http://lxml.de/)
  - [praw](https://praw.readthedocs.org/en/v2.1.16/)
+ - [sqlalchemy](http://www.sqlalchemy.org/)
 
 You also need [youtube-dl](http://rg3.github.io/youtube-dl/).
 
 On Ubuntu, you can install these with:
 
-    sudo apt-get install youtube-dl python-yaml
+    sudo apt-get install youtube-dl python-yaml python-sqlalchemy
     sudo pip install praw lxml
 
 Update youtube-dl to the latest version:
@@ -60,6 +61,6 @@ For cron, the following lines will run the bot every 10 minutes:
 TODO
 ----
 
- - Stop faking User-Agent when uploading to AWS (LiveLeaks)
- - Proper category (News, Middle East, etc) -- currently defaulting to "World News"
+ - ~~Stop faking User-Agent when uploading to AWS (LiveLeaks)~~
+ - ~~Proper category (News, Middle East, etc) -- currently defaulting to "World News"~~
  - Proper content rating -- currently defaulting to MA

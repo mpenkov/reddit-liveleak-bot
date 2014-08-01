@@ -13,6 +13,44 @@ import json
 from StringIO import StringIO
 from lxml import etree
 
+from user_agent import USER_AGENT
+
+#
+# See parse_categories.py
+#
+CATEGORIES = {}
+CATEGORIES["World News"] = 2
+CATEGORIES["Ukraine"] = 37
+CATEGORIES["Regional News"] = 3
+CATEGORIES["Other News"] = 4
+CATEGORIES["Politics"] = 5
+CATEGORIES["Syria"] = 33
+CATEGORIES["Afghanistan"] = 8
+CATEGORIES["Iraq"] = 7
+CATEGORIES["Iran"] = 9
+CATEGORIES["Other Middle East"] = 10
+CATEGORIES["WTF"] = 13
+CATEGORIES["Creative"] = 14
+CATEGORIES["Other Entertainment"] = 16
+CATEGORIES["Music"] = 20
+CATEGORIES["Liveleak Challenges"] = 21
+CATEGORIES["Weapons"] = 22
+CATEGORIES["Sports"] = 29
+CATEGORIES["Yawn"] = 34
+CATEGORIES["Vehicles"] = 36
+CATEGORIES["LiveLeaks"] = 17
+CATEGORIES["Citizen Journalism"] = 19
+CATEGORIES["Your Say"] = 11
+CATEGORIES["Hobbies"] = 35
+CATEGORIES["Other Items from Liveleakers"] = 24
+CATEGORIES["Religion"] = 26
+CATEGORIES["Conspiracy"] = 27
+CATEGORIES["Propaganda"] = 28
+CATEGORIES["Science and Technology"] = 30
+CATEGORIES["Nature"] = 31
+CATEGORIES["History"] = 32
+CATEGORIES["Other"] = 18
+
 class LiveLeakUploader(object):
     def __init__(self, debug_level=0):
         self.cookies = None
@@ -25,7 +63,7 @@ class LiveLeakUploader(object):
         self.cookies["liveleak_user_token"] = r.cookies["liveleak_user_token"]
         self.cookies["liveleak_user_password"] = r.cookies["liveleak_user_password"]
 
-    def upload(self, path, title, body, tags):
+    def upload(self, path, title, body, tags, category):
         r = requests.get("http://www.liveleak.com/item?a=add_item", cookies=self.cookies)
         if self.debug_level:
             print r.status_code
@@ -59,7 +97,7 @@ class LiveLeakUploader(object):
         data = {"title": title, 
                 "body_text": body, 
                 "tag_string": tags,
-                "category_array%5B%5D": 2, # TODO: work out how to pass this correctly
+                "category_array[]": CATEGORIES[category],
                 "address": "",
                 "location_id": 0,
                 "is_private": 0,
@@ -119,7 +157,7 @@ class LiveLeakUploader(object):
           "Accept-Encoding": "gzip,deflate,sdch",
           "Host": "llbucs.s3.amazonaws.com",
           "Accept-Language": "en-US,en;q=0.8,ja;q=0.6,ru;q=0.4",
-          "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.153 Safari/537.36", # TODO: we shouldn't be faking this...
+          "User-Agent": USER_AGENT,
           "Content-Type": content_type,
           "Accept": "*/*",
           "Referer": "http://www.liveleak.com/item?a=add_item",
@@ -266,11 +304,12 @@ def create_parser():
     from optparse import OptionParser
     p = OptionParser("usage: %prog [options] video.mp4")
     p.add_option("-d", "--debug", dest="debug", type="int", default=0, help="Set the debug level")
-    p.add_option("-t", "--title", dest="title", type="string", default=None, help="Specify the title")
-    p.add_option("-b", "--body", dest="body", type="string", default=None, help="Specify the body")
-    p.add_option("-T", "--tags", dest="tags", type="string", default=None, help="Specify the tags")
+    p.add_option("-t", "--title", dest="title", type="string", default="this is a test", help="Specify the title")
+    p.add_option("-b", "--body", dest="body", type="string", default="this is a test", help="Specify the body")
+    p.add_option("-T", "--tags", dest="tags", type="string", default="test", help="Specify the tags")
     p.add_option("-u", "--username", dest="username", type="string", default=None, help="Specify the username")
     p.add_option("-p", "--password", dest="password", type="string", default=None, help="Specify the password")
+    p.add_option("-c", "--category", dest="category", type="string", default="Other", help="Specify the category for the video")
     return p
 
 def main():
@@ -292,10 +331,9 @@ def main():
     uploader.login(username, password)
 
     path = args[0]
-    title = opts.title if opts.title else path
-    body = opts.title if opts.title else path
-    tags = opts.title if opts.tags else path
-    uploader.upload(path, title, body, tags)
+    if opts.category not in CATEGORIES:
+        parser.error("invalid category: %s" % `category`)
+    uploader.upload(path, opts.title, opts.body, opts.tags, opts.category)
 
 if __name__ == "__main__":
     main()

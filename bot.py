@@ -11,12 +11,18 @@ import urllib
 import re
 import collections
 
+#
+# TODO: logging
+# http://blog.tplus1.com/blog/2007/09/28/the-python-logging-module-is-much-better-than-print-statements/
+#
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import NoResultFound
 
 from orm import Submission, Mention, Video
 from liveleak_upload import LiveLeakUploader
+from user_agent import USER_AGENT
 
 STATE_DISCOVERED = 1
 STATE_DOWNLOADED = 2
@@ -64,7 +70,7 @@ class Bot(object):
         Session = sessionmaker(bind=engine)
         self.session = Session()
 
-        self.r = praw.Reddit("Mirror YouTube videos to LiveLeak by u/mishapenkov v 2.0\nURL: https://github.com/mpenkov/reddit-liveleak-bot")
+        self.r = praw.Reddit(USER_AGENT)
         self.r.login(self.reddit_username, self.reddit_password)
 
     def monitor(self):
@@ -112,6 +118,9 @@ class Bot(object):
                 mention = self.session.query(Mention).filter_by(permalink=new_comment.permalink).one()
                 break
             except NoResultFound:
+                #
+                # TODO: check that we've seen the parent submission and have downloaded the video from YouTube
+                #
                 mention = Mention(permalink=new_comment.permalink, submissionId=new_comment.submission.id, discovered=datetime.datetime.now(), command=m.group("command"), state=STATE_DISCOVERED)
                 print mention.permalink, mention.command
                 self.session.add(mention)
@@ -128,6 +137,7 @@ class Bot(object):
 
         for submission in submission_comments:
             score = sum([x.ups-x.downs for x in submission_comments[submission]])
+            print submission, score
             if score < self.ups_threshold:
                 continue
 
@@ -157,7 +167,7 @@ class Bot(object):
                 if self.liveleak_dummy:
                     liveleak_id = "dummy"
                 else:
-                    liveleak_id = uploader.upload(video.localPath, submission.title, body, subreddit)
+                    liveleak_id = uploader.upload(video.localPath, submission.title, body, subreddit, self.subreddits[subreddit])
             except:
                 print traceback.format_exc()
                 break
