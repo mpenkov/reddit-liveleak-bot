@@ -46,7 +46,20 @@ COMMENT = """[**Mirror**](http://www.liveleak.com/view?i=%s)
 
 def extract_youtube_id(url):
     """Extract a YouTube ID from a URL."""
-    m = re.search(r"youtu\.?be.*(v=|/)(?P<id>[a-zA-Z0-9-_]{11})&?", url)
+    #
+    # YouTube attribution links.
+    # More info:
+    # http://techcrunch.com/2011/06/01/youtube-now-lets-you-license-videos-under-creative-commons-remixers-rejoice/
+    # Example:
+    # http://www.youtube.com/attribution_link?a=P3m5pZfhr5Y&u=%2Fwatch%3Fv%3DHnc-1rXLx_4%26feature%3Dshare
+    m = re.search("watch%3Fv%3D(?P<id>[a-zA-Z0-9-_]{11})", url)
+    if m:
+        return m.group("id")
+
+    #
+    # Regular YouTube links.
+    #
+    m = re.search(r"youtu\.?be.*(v=|/)(?P<id>[a-zA-Z0-9-_]{11})", url)
     if m:
         return m.group("id")
     return None
