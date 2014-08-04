@@ -10,6 +10,9 @@ import traceback
 import urllib
 import re
 import collections
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 #
 # TODO: logging
@@ -89,14 +92,14 @@ class Bot(object):
                 submission = self.session.query(Submission).filter_by(id=new_submission.id).one()
                 break
             except NoResultFound:
-                print "new_submission", new_submission
+                logging.debug("new submission: %s", new_submission.permalink)
                 submission = Submission(id=new_submission.id, subreddit=subreddit, title=new_submission.title, discovered=datetime.datetime.now())
                 self.session.add(submission)
                 self.session.commit()
 
             youtube_id = extract_youtube_id(new_submission.url)
             if youtube_id == None:
-                print "skipping submission URL:", new_submission.url
+                logging.debug("skipping submission URL: %s", new_submission.url)
                 continue
 
             try:
@@ -122,11 +125,12 @@ class Bot(object):
                 # TODO: check that we've seen the parent submission and have downloaded the video from YouTube
                 #
                 mention = Mention(permalink=new_comment.permalink, submissionId=new_comment.submission.id, discovered=datetime.datetime.now(), command=m.group("command"), state=STATE_DISCOVERED)
-                print mention.permalink, mention.command
+                console.debug("new mention %s %s", mention.permalink, mention.command)
                 self.session.add(mention)
                 self.session.commit()
 
     def monitor_summons(self, subreddit):
+        """Monitor currently active Mentions for instances when the bot should be summoned."""
         submission_comments = collections.defaultdict(list)
         for mention in self.session.query(Mention).filter_by(state=STATE_DISCOVERED):
             comment = self.r.get_submission(mention.permalink).comments[0]
@@ -157,19 +161,19 @@ class Bot(object):
                 # This will happen if
                 #
                 # 1) The video hasn't been downloaded yet
-                # 2) The video has already been reposted
+                # 2) The video has already been reposted, is stale or purged
                 #
                 continue
 
             body = "repost of http://youtube.com/watch?v=%s from %s" % (video.youtubeId, submission.permalink)
-            print body
+            logging.debug(body)
             try:
                 if self.liveleak_dummy:
                     liveleak_id = "dummy"
                 else:
                     liveleak_id = uploader.upload(video.localPath, submission.title, body, subreddit, self.subreddits[subreddit])
-            except:
-                print traceback.format_exc()
+            except Exception as ex:
+                logging.exception(ex)
                 break
 
             video.liveleakId = liveleak_id
@@ -190,9 +194,9 @@ class Bot(object):
             template = P.join(self.dest_dir, "%(id)s.%(ext)s")
             args = ["youtube-dl", "--quiet", "--output", template, "--", video.youtubeId]
             return_code = sub.call(args)
-            print " ".join(args)
+            logging.debug(" ".join(args))
             if return_code != 0:
-                print "download failed for YouTube video ID:", video.youtubeId
+                logging.error("download failed for YouTube video ID:", video.youtubeId)
                 continue
 
             #
@@ -226,11 +230,11 @@ class Bot(object):
         """Delete stale video data."""
         for video in self.session.query(Video).filter_by(state=STATE_STALE):
             if P.isfile(video.localPath):
-                print "removing", video.localPath
+                logging.debug("removing %s", video.localPath)
                 try:
                     os.remove(video.localPath)
-                except OSError:
-                    print traceback.format_exc()
+                except OSError as ose:
+                    logging.exception(ose)
                     pass
 
             video.localPath = None
