@@ -12,12 +12,16 @@ import re
 import collections
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
 
 #
-# TODO: logging
 # http://blog.tplus1.com/blog/2007/09/28/the-python-logging-module-is-much-better-than-print-statements/
 #
+logging.basicConfig(level=logging.INFO)
+#
+# http://stackoverflow.com/questions/11029717/how-do-i-disable-log-messages-from-the-requests-library
+#
+requests_log = logging.getLogger("requests")
+requests_log.setLevel(logging.WARNING)
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -125,7 +129,7 @@ class Bot(object):
                 # TODO: check that we've seen the parent submission and have downloaded the video from YouTube
                 #
                 mention = Mention(permalink=new_comment.permalink, submissionId=new_comment.submission.id, discovered=datetime.datetime.now(), command=m.group("command"), state=STATE_DISCOVERED)
-                console.debug("new mention %s %s", mention.permalink, mention.command)
+                logging.info("new mention %s %s", mention.permalink, mention.command)
                 self.session.add(mention)
                 self.session.commit()
 
@@ -141,7 +145,7 @@ class Bot(object):
 
         for submission in submission_comments:
             score = sum([x.ups-x.downs for x in submission_comments[submission]])
-            print submission, score
+            logging.debug("monitor_summons: %d %s", submission.score, submission.permalink)
             if score < self.ups_threshold:
                 continue
 
@@ -154,6 +158,7 @@ class Bot(object):
                 # 1) we haven't seen the submission before or 
                 # 2) the submission doesn't have a link to a YouTube video
                 #
+                logging.error("unable to find a video for submission: %s (%s)", submission.id, submission.title)
                 continue
 
             if video.state != STATE_DOWNLOADED:
@@ -163,10 +168,11 @@ class Bot(object):
                 # 1) The video hasn't been downloaded yet
                 # 2) The video has already been reposted, is stale or purged
                 #
+                logging.error("unexpected video state: %s", video.state)
                 continue
 
             body = "repost of http://youtube.com/watch?v=%s from %s" % (video.youtubeId, submission.permalink)
-            logging.debug(body)
+            logging.info(body)
             try:
                 if self.liveleak_dummy:
                     liveleak_id = "dummy"
@@ -193,8 +199,8 @@ class Bot(object):
 
             template = P.join(self.dest_dir, "%(id)s.%(ext)s")
             args = ["youtube-dl", "--quiet", "--output", template, "--", video.youtubeId]
-            return_code = sub.call(args)
             logging.debug(" ".join(args))
+            return_code = sub.call(args)
             if return_code != 0:
                 logging.error("download failed for YouTube video ID:", video.youtubeId)
                 continue
