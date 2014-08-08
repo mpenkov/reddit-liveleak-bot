@@ -4,12 +4,14 @@ videopath: /path/to/videos/subdir
 liveleak:
     username: your_username
     password: your_password
-    dummy: false                # If set to true, won't actually post anything to LiveLeak. For testing only.
+    dummy: false                        # If set to true, won't actually post anything to LiveLeak. For testing only.
 reddit:
     username: your_username
     password: your_password
-ups_threshold: 2                # The minimum score for a comment in order to consider reposting
-hold_hours: 72                  # The number of hours to hold videos before purging
+ups_threshold: 2                        # The minimum score for a comment in order to consider reposting
+hold_hours: 72                          # The number of hours to hold videos before purging
 subreddits:
-    UkrainianConflict: Ukraine  # The LiveLeak category to post to (see CATEGORIES in liveleak_upload.py)
-limit: 100                      # The number of submissions to fetch at any one time
+    UkrainianConflict:
+        download_all: true              # Download all new submissions as they are posted
+        liveleak_category: Ukraine      # The LiveLeak category to use for reposted videos
+limit: 100                              # The number of submissions to fetch at any one time

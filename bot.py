@@ -27,18 +27,19 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import NoResultFound
 
-from orm import Submission, Mention, Video
+from orm import Subreddit, Mention, Video
 from liveleak_upload import LiveLeakUploader
 from user_agent import USER_AGENT
 
-STATE_DISCOVERED = 1
 STATE_DOWNLOADED = 2
 STATE_REPOSTED = 3
 STATE_STALE = 4
 
 MENTION_REGEX = re.compile(r"redditliveleakbot \+(?P<command>\w+)", re.IGNORECASE)
 
-COMMENT = """[**Mirror**](http://www.liveleak.com/view?i=%s) 
+COMMENT_MIRROR = "[**Mirror**](http://www.liveleak.com/view?i=%s)"
+COMMENT_ERROR  = "**Error:** %s"
+COMMENT_FOOTER = """
 
 ---
 
@@ -96,23 +97,28 @@ class Bot(object):
     def monitor(self):
         """Monitor all subreddits specified in the config.xml file."""
         for subreddit in self.subreddits:
-            self.monitor_submissions(subreddit)
-            self.download()
+            if self.subreddits[subreddit]["download_all"]:
+                self.download_new_videos(subreddit)
             self.monitor_mentions(subreddit)
-            self.monitor_summons(subreddit)
+            self.try_repost(subreddit)
+            self.monitor_deleted_videos()
 
-    def monitor_submissions(self, subreddit):
-        """Monitors the specific subreddit for submissions that link to YouTube videos."""
-        submissions = self.r.get_subreddit(subreddit).get_new(limit=self.limit)
-        for new_submission in submissions:
-            try:
-                submission = self.session.query(Submission).filter_by(id=new_submission.id).one()
+    def download_new_videos(self, subreddit):
+        """Monitors the specific subreddit for new submissions that link to YouTube videos."""
+        try:
+            sub_info = self.session.query(Subreddit).filter_by(id=subreddit).one()
+        except NoResultFound:
+            sub_info = Subreddit(id=subreddit)
+            self.session.add(sub_info)
+
+        if sub_info.mostRecentSubmission is None:
+            sub_info.mostRecentSubmission = datetime.datetime.min
+
+        now = datetime.datetime.now()
+
+        for new_submission in self.r.get_subreddit(subreddit).get_new(limit=self.limit):
+            if datetime.datetime.fromtimestamp(new_submission.created_utc) < sub_info.mostRecentSubmission:
                 break
-            except NoResultFound:
-                logging.debug("new submission: %s", new_submission.permalink)
-                submission = Submission(id=new_submission.id, subreddit=subreddit, title=new_submission.title, discovered=datetime.datetime.now())
-                self.session.add(submission)
-                self.session.commit()
 
             youtube_id = extract_youtube_id(new_submission.url)
             if youtube_id == None:
@@ -121,127 +127,176 @@ class Bot(object):
 
             try:
                 video = self.session.query(Video).filter_by(youtubeId=youtube_id).one()
+                if video.localPath is None or not P.isfile(video.localPath):
+                    raise NoResultFound("need to download this video again")
             except NoResultFound:
-                video = Video(youtubeId=youtube_id, state=STATE_DISCOVERED, downloadAttempts=0, lastModified=datetime.datetime.now())
-                self.session.add(video)
+                video = self.download(youtube_id, new_submission.permalink)
+                if video:
+                    self.session.add(video)
 
-            submission.youtubeId = youtube_id
-            self.session.commit()
+        sub_info.mostRecentSubmission = now
+        self.session.commit()
 
     def monitor_mentions(self, subreddit):
         """Monitor the specific subreddits for comments that mention our username."""
+        meth_name = "monitor_mentions"
+        try:
+            sub_info = self.session.query(Subreddit).filter_by(id=subreddit).one()
+        except NoResultFound:
+            sub_info = Subreddit(id=subreddit)
+            self.session.add(sub_info)
+
+        if sub_info.mostRecentComment is None:
+            sub_info.mostRecentComment = datetime.datetime.min
+
+        now = datetime.datetime.now()
+
         for new_comment in self.r.get_subreddit(subreddit).get_comments(limit=self.limit):
+            if datetime.datetime.fromtimestamp(new_comment.created_utc) < sub_info.mostRecentComment:
+                break
+
             m = MENTION_REGEX.search(new_comment.body)
             if not m:
                 continue
-            try:
-                mention = self.session.query(Mention).filter_by(permalink=new_comment.permalink).one()
-                break
-            except NoResultFound:
-                #
-                # TODO: check that we've seen the parent submission and have downloaded the video from YouTube
-                #
-                mention = Mention(permalink=new_comment.permalink, submissionId=new_comment.submission.id, discovered=datetime.datetime.now(), command=m.group("command"), state=STATE_DISCOVERED)
-                logging.info("new mention %s %s", mention.permalink, mention.command)
-                self.session.add(mention)
-                self.session.commit()
 
-    def monitor_summons(self, subreddit):
+            #
+            # Check if we've already replied to this comment
+            # This can happen if the database has been reset.
+            #
+            if "redditliveleakbot" in [reply.author.name for reply in new_comment.replies]:
+                logging.info("%s: we have already replied to this comment: %s", meth_name, new_comment.permalink)
+                continue
+
+            #
+            # TODO: If the bot starts getting overwhelmed, do the downloading AFTER we're checking for upvotes
+            #
+            youtube_id = extract_youtube_id(new_comment.submission.url)
+            if youtube_id == None:
+                err = "[this link](%s) doesn't look like a YouTube video" % new_comment.submission.url
+                new_comment.reply((COMMENT_ERROR % err) + COMMENT_FOOTER)
+                logging.error("%s: could not extract youtube_id from URL: %s", meth_name, new_comment.submission.url)
+                continue
+
+            #
+            # First, check if we've already downloaded this video.
+            # If we haven't, then download it.
+            # Notify the poster of any problems during downloading.
+            #
+            try:
+                video = self.session.query(Video).filter_by(youtubeId=youtube_id).one()
+                if video.liveleakId:
+                    logger.info("%s: this video has already been reposted: %s", meth_name, youtube_id)
+                    new_comment.reply((COMMENT_MIRROR % video.liveleakId) + COMMENT_FOOTER)
+                    continue
+                elif video.localPath is None or not P.isfile(video.localPath):
+                    raise NoResultFound("need to download this video again")
+                assert P.isfile(video.localPath)
+            except NoResultFound:
+                video = self.download(youtube_id, new_comment.submission.permalink)
+                if video is None:
+                    err = "couldn't download [this video](%s)" % new_comment.submission.url
+                    new_comment.reply((COMMENT_ERROR % err) + COMMENT_FOOTER)
+                    continue
+                self.session.add(video)
+
+            mention = Mention(permalink=new_comment.permalink, youtubeId=youtube_id, discovered=datetime.datetime.now(), command=m.group("command"), state=STATE_DOWNLOADED)
+            self.session.add(mention)
+            self.session.commit()
+
+        sub_info.mostRecentComment = now
+        self.session.commit()
+
+    def try_repost(self, subreddit):
         """Monitor currently active Mentions for instances when the bot should be summoned."""
+        meth_name = "try_repost"
         submission_comments = collections.defaultdict(list)
-        for mention in self.session.query(Mention).filter_by(state=STATE_DISCOVERED):
+        for mention in self.session.query(Mention).filter_by(state=STATE_DOWNLOADED):
             comment = self.r.get_submission(mention.permalink).comments[0]
+            comment.mention = mention
             submission_comments[comment.submission].append(comment)
 
         uploader = LiveLeakUploader()
         uploader.login(self.liveleak_username, self.liveleak_password)
 
         for submission in submission_comments:
-            score = sum([x.ups-x.downs for x in submission_comments[submission]])
-            logging.debug("monitor_summons: %d %s", submission.score, submission.permalink)
+            score = sum([x.score for x in submission_comments[submission]])
+            logging.debug("%s: %d %s", meth_name, submission.score, submission.permalink)
             if score < self.ups_threshold:
                 continue
 
-            try:
-                old_submission, video = self.session.query(Submission, Video).filter(Submission.id==submission.id).filter(Submission.youtubeId==Video.youtubeId).filter_by(id=submission.id).one()
-            except NoResultFound:
-                #
-                # This will happen if 
-                #
-                # 1) we haven't seen the submission before or 
-                # 2) the submission doesn't have a link to a YouTube video
-                #
-                logging.error("unable to find a video for submission: %s (%s)", submission.id, submission.title)
-                continue
+            youtube_id = submission_comments[submission][0].mention.youtubeId
+            #
+            # The query below can never fail since the Mention.state is DOWNLOADED 
+            #
+            video = self.session.query(Video).filter_by(youtubeId=youtube_id).one()
+            assert P.isfile(video.localPath)
 
-            if video.state != STATE_DOWNLOADED:
-                #
-                # This will happen if
-                #
-                # 1) The video hasn't been downloaded yet
-                # 2) The video has already been reposted, is stale or purged
-                #
-                logging.error("unexpected video state: %s", video.state)
-                continue
-
-            body = "repost of http://youtube.com/watch?v=%s from %s" % (video.youtubeId, submission.permalink)
-            logging.info(body)
             try:
-                if self.liveleak_dummy:
-                    liveleak_id = "dummy"
-                else:
-                    liveleak_id = uploader.upload(video.localPath, submission.title, body, subreddit, self.subreddits[subreddit])
+                self.repost(video)
             except Exception as ex:
                 logging.exception(ex)
                 break
 
-            video.liveleakId = liveleak_id
-            video.state = STATE_REPOSTED
-            for mention in self.session.query(Mention).filter_by(submissionId=submission.id):
-                mention.state = STATE_REPOSTED
-            self.session.commit()
+            for comment in submission_comments[submission]:
+                comment.mention.state = STATE_REPOSTED
+                comment.reply((COMMENT_MIRROR % video.liveleakId) + COMMENT_FOOTER)
 
-            submission_comments[submission][0].reply(COMMENT % liveleak_id)
+    def download(self, youtube_id, permalink):
+        """Download the video with the specified YouTube ID. 
+        If it has already been downloaded, the actual download is skipped.
+        Returns a Video instance.
+        """
+        meth_name = "download"
+        try:
+            video = self.session.query(Video).filter_by(youtubeId=youtube_id).one()
+        except NoResultFound:
+            video = Video(youtubeId=youtube_id, redditSubmissionPermalink=permalink)
+            self.session.add(video)
 
-    def download(self):
-        """Downloads videos that have not yet been downloaded."""
-        for video in self.session.query(Video).filter_by(state=STATE_DISCOVERED):
-            video.downloadAttempts += 1
-            video.lastModified = datetime.datetime.now()
-            self.session.commit()
+        video.localPath = None
+        for f in os.listdir(self.dest_dir):
+            if f.startswith(video.youtubeId):
+                video.localPath = P.join(self.dest_dir, f)
+                break
 
+        if video.localPath is None:
             template = P.join(self.dest_dir, "%(id)s.%(ext)s")
             args = ["youtube-dl", "--quiet", "--output", template, "--", video.youtubeId]
-            logging.debug(" ".join(args))
+            logging.debug("%s: %s", meth_name, " ".join(args))
             return_code = sub.call(args)
             if return_code != 0:
-                logging.error("download failed for YouTube video ID:", video.youtubeId)
-                continue
+                logging.error("%s: download failed for YouTube video ID: %s", meth_name, video.youtubeId)
+                #
+                # TODO: the Video has been added to the session
+                # Should we remove it?
+                #
+                return None
 
-            #
-            # TODO: is there a better way to work out what the local file name is?
-            # We know the ID but don't know the extension
-            #
             video.localPath = None
             for f in os.listdir(self.dest_dir):
                 if f.startswith(video.youtubeId):
                     video.localPath = P.join(self.dest_dir, f)
                     break
-            assert video.localPath
-            video.state = STATE_DOWNLOADED
-            self.session.commit()
+        assert video.localPath
+
+        video.state = STATE_DOWNLOADED
+        video.downloaded = datetime.datetime.now()
+        video.localModified = datetime.datetime.now()
+        self.session.commit()
+
+        return video
 
     def check_stale(self):
         """Make all data that hasn't been updated in self.hold_hours hours stale."""
         cutoff = datetime.datetime.now() - datetime.timedelta(hours=self.hold_hours)
-        for mention in self.session.query(Mention).filter_by(state=STATE_DISCOVERED):
+        for mention in self.session.query(Mention).filter_by(state=STATE_DOWNLOADED):
             if mention.discovered < cutoff:
                 mention.state = STATE_STALE
 
         for video in self.session.query(Video):
-            if video.lastModified < cutoff and video.state != STATE_REPOSTED:
+            if video.discovered < cutoff and video.state != STATE_REPOSTED:
                 video.state = STATE_STALE
-                video.lastModified = datetime.datetime.now()
+                video.localModified = datetime.datetime.now()
 
         self.session.commit()
 
@@ -258,7 +313,58 @@ class Bot(object):
 
             video.localPath = None
             video.state = STATE_PURGED
-            video.lastModified = datetime.datetime.now()
+            video.localModified = datetime.datetime.now()
+
+    def repost(self, video):
+        """Repost the video to LiveLeak.
+        Raises Exceptions on failure.
+        Returns None."""
+        meth_name = "repost"
+        submission = self.r.get_submission(video.redditSubmissionPermalink)
+        body = "repost of http://youtube.com/watch?v=%s from %s" % (video.youtubeId, submission.permalink)
+        logging.info("%s: %s", meth_name, body)
+        if self.liveleak_dummy:
+            liveleak_id = "dummy"
+        else:
+            liveleak_id = uploader.upload(video.localPath, submission.title, body, subreddit, self.subreddits[subreddit])
+        video.liveleakId = liveleak_id
+        video.state = STATE_REPOSTED
+        self.session.commit()
+
+    def monitor_deleted_videos(self):
+        """Go through all our downloaded videos and check if they have been deleted from YouTube.
+        If yes, repost them."""
+        meth_name = "monitor_deleted_videos"
+        for video in self.session.query(Video).filter_by(state=STATE_DOWNLOADED):
+            submission = self.r.get_submission(video.redditSubmissionPermalink)
+            #
+            # Check if we've already replied to this submission
+            # This can happen if the database has been reset.
+            #
+            if "redditliveleakbot" in [reply.author.name for reply in submission.comments]:
+                logging.info("%s: we have already replied to this submission: %s", meth_name, submission.permalink)
+                continue
+
+            args = ["youtube-dl", "--quiet", "--simulate", "--", video.youtubeId]
+            logging.debug("%s: %s", meth_name, " ".join(args))
+            return_code = sub.call(args)
+            if return_code == 0:
+                continue
+
+            try:
+                self.repost(video)
+            except Exception as ex:
+                logging.exception(ex)
+                break
+
+            #
+            # Technically, there could be comments summoning the bot as well.
+            # Should we reply to them instead?
+            #
+            submission.add_comment((COMMENT_MIRROR % video.liveleakId) + COMMENT_FOOTER)
+
+            video.deleted = datetime.datetime.now()
+            self.session.commit()
 
 def create_parser(usage):
     """Create an object to use for the parsing of command-line arguments."""
@@ -273,12 +379,14 @@ def main():
     if len(args) != 1:
         parser.error("invalid number of arguments")
     action = args[0]
-    if action not in "monitor check_stale purge".split(" "):
+    if action not in "monitor deleted check_stale purge".split(" "):
         parser.error("invalid action: %s" % action)
 
     bot = Bot(options.config)
     if action == "monitor":
         bot.monitor()
+    elif action == "deleted":
+        bot.monitor_deleted_videos()
     elif action == "check_stale":
         bot.check_stale()
     elif action == "purge":
