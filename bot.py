@@ -77,6 +77,9 @@ class Bot(object):
         if not P.isdir(self.dest_dir):
             os.makedirs(self.dest_dir)
 
+        #
+        # TODO: check the correctness of the config file
+        #
         self.liveleak_username = doc["liveleak"]["username"]
         self.liveleak_password = doc["liveleak"]["password"]
         self.liveleak_dummy = doc["liveleak"]["dummy"]
@@ -130,7 +133,7 @@ class Bot(object):
                 if video.localPath is None or not P.isfile(video.localPath):
                     raise NoResultFound("need to download this video again")
             except NoResultFound:
-                video = self.download(youtube_id, new_submission.permalink)
+                video = self.download_video(youtube_id, new_submission.permalink)
                 if video:
                     self.session.add(video)
 
@@ -163,7 +166,7 @@ class Bot(object):
             # Check if we've already replied to this comment
             # This can happen if the database has been reset.
             #
-            if "redditliveleakbot" in [reply.author.name for reply in new_comment.replies]:
+            if "redditliveleakbot" in [reply.author.name for reply in new_comment.replies if reply.author]:
                 logging.info("%s: we have already replied to this comment: %s", meth_name, new_comment.permalink)
                 continue
 
@@ -192,7 +195,7 @@ class Bot(object):
                     raise NoResultFound("need to download this video again")
                 assert P.isfile(video.localPath)
             except NoResultFound:
-                video = self.download(youtube_id, new_comment.submission.permalink)
+                video = self.download_video(youtube_id, new_comment.submission.permalink)
                 if video is None:
                     err = "couldn't download [this video](%s)" % new_comment.submission.url
                     new_comment.reply((COMMENT_ERROR % err) + COMMENT_FOOTER)
@@ -232,7 +235,7 @@ class Bot(object):
             assert P.isfile(video.localPath)
 
             try:
-                self.repost(video)
+                self.repost(uploader, video)
             except Exception as ex:
                 logging.exception(ex)
                 break
@@ -241,7 +244,7 @@ class Bot(object):
                 comment.mention.state = STATE_REPOSTED
                 comment.reply((COMMENT_MIRROR % video.liveleakId) + COMMENT_FOOTER)
 
-    def download(self, youtube_id, permalink):
+    def download_video(self, youtube_id, permalink):
         """Download the video with the specified YouTube ID. 
         If it has already been downloaded, the actual download is skipped.
         Returns a Video instance.
@@ -262,7 +265,7 @@ class Bot(object):
         if video.localPath is None:
             template = P.join(self.dest_dir, "%(id)s.%(ext)s")
             args = ["youtube-dl", "--quiet", "--output", template, "--", video.youtubeId]
-            logging.debug("%s: %s", meth_name, " ".join(args))
+            logging.info("%s: %s", meth_name, " ".join(args))
             return_code = sub.call(args)
             if return_code != 0:
                 logging.error("%s: download failed for YouTube video ID: %s", meth_name, video.youtubeId)
@@ -315,18 +318,19 @@ class Bot(object):
             video.state = STATE_PURGED
             video.localModified = datetime.datetime.now()
 
-    def repost(self, video):
+    def repost(self, uploader, video):
         """Repost the video to LiveLeak.
         Raises Exceptions on failure.
         Returns None."""
         meth_name = "repost"
         submission = self.r.get_submission(video.redditSubmissionPermalink)
+        subreddit = submission.subreddit.display_name
         body = "repost of http://youtube.com/watch?v=%s from %s" % (video.youtubeId, submission.permalink)
         logging.info("%s: %s", meth_name, body)
         if self.liveleak_dummy:
             liveleak_id = "dummy"
         else:
-            liveleak_id = uploader.upload(video.localPath, submission.title, body, subreddit, self.subreddits[subreddit])
+            liveleak_id = uploader.upload(video.localPath, submission.title, body, subreddit, self.subreddits[subreddit]["liveleak_category"])
         video.liveleakId = liveleak_id
         video.state = STATE_REPOSTED
         self.session.commit()
@@ -335,13 +339,17 @@ class Bot(object):
         """Go through all our downloaded videos and check if they have been deleted from YouTube.
         If yes, repost them."""
         meth_name = "monitor_deleted_videos"
+
+        uploader = LiveLeakUploader()
+        uploader.login(self.liveleak_username, self.liveleak_password)
+
         for video in self.session.query(Video).filter_by(state=STATE_DOWNLOADED):
             submission = self.r.get_submission(video.redditSubmissionPermalink)
             #
             # Check if we've already replied to this submission
             # This can happen if the database has been reset.
             #
-            if "redditliveleakbot" in [reply.author.name for reply in submission.comments]:
+            if "redditliveleakbot" in [reply.author.name for reply in submission.comments if reply.author]:
                 logging.info("%s: we have already replied to this submission: %s", meth_name, submission.permalink)
                 continue
 
@@ -352,7 +360,7 @@ class Bot(object):
                 continue
 
             try:
-                self.repost(video)
+                self.repost(uploader, video)
             except Exception as ex:
                 logging.exception(ex)
                 break
