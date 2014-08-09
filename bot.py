@@ -30,6 +30,7 @@ from sqlalchemy.orm.exc import NoResultFound
 from orm import Subreddit, Mention, Video
 from liveleak_upload import LiveLeakUploader
 from user_agent import USER_AGENT
+from video_exists import video_exists
 
 STATE_DOWNLOADED = 2
 STATE_REPOSTED = 3
@@ -85,6 +86,7 @@ class Bot(object):
         self.liveleak_dummy = doc["liveleak"]["dummy"]
         self.reddit_username = doc["reddit"]["username"]
         self.reddit_password = doc["reddit"]["password"]
+        self.google_developer_key = doc["google_developer_key"]
 
         self.ups_threshold = doc["ups_threshold"]
         self.hold_hours = doc["hold_hours"]
@@ -353,10 +355,7 @@ class Bot(object):
                 logging.info("%s: we have already replied to this submission: %s", meth_name, submission.permalink)
                 continue
 
-            args = ["youtube-dl", "--quiet", "--simulate", "--", video.youtubeId]
-            logging.debug("%s: %s", meth_name, " ".join(args))
-            return_code = sub.call(args)
-            if return_code == 0:
+            if video_exists(self.google_developer_key, video.youtubeId):
                 continue
 
             try:

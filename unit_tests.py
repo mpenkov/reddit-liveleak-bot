@@ -51,3 +51,19 @@ class TestExtractYouTubeId(unittest.TestCase):
 
         url = "https://twitter.com/Praporec/status/489524665723809792/photo/1"
         self.assertEquals(extract_youtube_id(url), None)
+
+from video_exists import video_exists
+class TestVideoExists(unittest.TestCase):
+    def setUp(self):
+        import yaml
+        import os.path as P
+        with open(P.join(P.dirname(P.abspath(__file__)), "config.yml")) as fin:
+            self.key = yaml.load(fin)["google_developer_key"]
+
+    def test_positive(self):
+        video_id = "jNQXAC9IVRw"
+        self.assertTrue(video_exists(self.key, video_id))
+
+    def test_negative(self):
+        video_id = "Y7UmFIpenjs"
+        self.assertFalse(video_exists(self.key, video_id))
