@@ -57,14 +57,14 @@ class LiveLeakUploader(object):
         self.debug_level = debug_level
 
     def login(self, username, password):
-        r = requests.post("http://www.liveleak.com/index.php", data={"user_name": username, "user_password": password, "login": 1})
+        r = requests.post("http://www.liveleak.com/index.php", data={"user_name": username, "user_password": password, "login": 1}, headers={"User-Agent": USER_AGENT})
         assert r.status_code == 200
         self.cookies = {}
         self.cookies["liveleak_user_token"] = r.cookies["liveleak_user_token"]
         self.cookies["liveleak_user_password"] = r.cookies["liveleak_user_password"]
 
     def upload(self, path, title, body, tags, category):
-        r = requests.get("http://www.liveleak.com/item?a=add_item", cookies=self.cookies)
+        r = requests.get("http://www.liveleak.com/item?a=add_item", cookies=self.cookies, headers={"User-Agent": USER_AGENT})
         if self.debug_level:
             print r.status_code
         assert r.status_code == 200, "failed to fetch add_item form"
@@ -111,7 +111,7 @@ class LiveLeakUploader(object):
                 "connection": connection
             }
 
-        r = requests.post("http://www.liveleak.com/item?a=add_item&ajax=1", data=data, cookies=self.cookies)
+        r = requests.post("http://www.liveleak.com/item?a=add_item&ajax=1", data=data, cookies=self.cookies, headers={"User-Agent": USER_AGENT})
 
         if self.debug_level:
             print "add_item POST", r.status_code
@@ -196,7 +196,7 @@ class LiveLeakUploader(object):
             print query_params
             print "</query_params>"
 
-        r = requests.get("http://www.liveleak.com/file", params=query_params, cookies=self.cookies)
+        r = requests.get("http://www.liveleak.com/file", params=query_params, cookies=self.cookies, headers={"User-Agent": USER_AGENT})
 
         if self.debug_level:
             print r.status_code
