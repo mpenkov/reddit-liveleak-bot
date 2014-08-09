@@ -1,4 +1,4 @@
 *.pyc
 *.swp
 praw.ini
-config.yml.sample
+config.yml
