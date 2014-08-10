@@ -362,11 +362,12 @@ class Bot(object):
         """Go through all our downloaded videos and check if they have been deleted from YouTube.
         If yes, repost them."""
         for video in self.session.query(Video).filter_by(state=STATE_DOWNLOADED):
+            if video_exists(self.google_developer_key, video.youtubeId):
+                continue
             submission = self.r.get_submission(video.redditSubmissionPermalink)
             if self.check_replies(submission):
                 continue
-            if not video_exists(self.google_developer_key, video.youtubeId):
-                self.repost_deleted_video(video, submission)
+            self.repost_deleted_video(video, submission)
 
     @transaction
     def repost_deleted_video(self, video, submission):
