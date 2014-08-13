@@ -1,4 +1,7 @@
 import unittest
+import os.path as P
+import yaml
+
 from bot import extract_youtube_id, MENTION_REGEX
 
 class TestMentionRegex(unittest.TestCase):
@@ -55,8 +58,6 @@ class TestExtractYouTubeId(unittest.TestCase):
 from video_exists import video_exists
 class TestVideoExists(unittest.TestCase):
     def setUp(self):
-        import yaml
-        import os.path as P
         with open(P.join(P.dirname(P.abspath(__file__)), "config.yml")) as fin:
             self.key = yaml.load(fin)["google_developer_key"]
 
@@ -67,3 +68,22 @@ class TestVideoExists(unittest.TestCase):
     def test_negative(self):
         video_id = "Y7UmFIpenjs"
         self.assertFalse(video_exists(self.key, video_id))
+
+class TestUpload(unittest.TestCase):
+    def setUp(self):
+        from liveleak_upload import LiveLeakUploader
+        self.up = LiveLeakUploader(True)
+
+        with open(P.join(P.dirname(P.abspath(__file__)), "config.yml")) as fin:
+            doc = yaml.load(fin)
+        self.up.login(doc["liveleak"]["username"], doc["liveleak"]["password"])
+
+    def test_upload(self):
+        path = P.join(P.dirname(P.abspath(__file__)), "test", "foreman_cif.mp4")
+        self.assertTrue(P.isfile(path))
+
+        self.up.upload(path, "test", "test", "test", "Other")
+
+    #
+    # TODO: test upload for bad category name
+    #
