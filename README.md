@@ -3,6 +3,8 @@ Bot to Repost YouTube Videos to LiveLeak
 
 Sparked by an idea from [this thread](http://www.reddit.com/r/UkrainianConflict/comments/2auyay/gold_for_the_person_that_writes_a_bot_that_will/).
 
+Also see [/r/redditliveleakbot](http://www.reddit.com/r/redditliveleakbot/).
+
 Installation
 ------------
 
@@ -12,13 +14,15 @@ On top of Python 2.7 and its default libraries, you need the following libraries
  - [lxml](http://lxml.de/)
  - [praw](https://praw.readthedocs.org/en/v2.1.16/)
  - [sqlalchemy](http://www.sqlalchemy.org/)
+ - [requests](http://docs.python-requests.org/)
+ - [requests-toolbelt](http://toolbelt.readthedocs.org/)
 
 You also need [youtube-dl](http://rg3.github.io/youtube-dl/).
 
 On Ubuntu, you can install these with:
 
     sudo apt-get install youtube-dl python-yaml python-sqlalchemy
-    sudo pip install praw lxml
+    sudo pip install praw lxml requests requests-toolbelt
 
 Update youtube-dl to the latest version:
 

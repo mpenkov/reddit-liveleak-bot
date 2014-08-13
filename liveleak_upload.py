@@ -15,6 +15,7 @@ logger = logging.getLogger(__file__)
 
 from StringIO import StringIO
 from lxml import etree
+from requests_toolbelt import MultipartEncoder
 
 from user_agent import USER_AGENT
 
@@ -141,22 +142,29 @@ class LiveLeakUploader(object):
         # Fields must be in the right order.
         #
         fields = "name key Filename acl Expires Content-Type success_action_status AWSAccessKeyId policy signature".split(" ")
-        fields = ((name, multipart_params[name]) for name in fields)
-        files = [("file", filename, open(path, "rb").read())]
-        content_type, content = encode_multipart_formdata(fields, files, boundary)
+        fields = [(name, multipart_params[name]) for name in fields]
+        fields.append(("file", ("filename", open(path, "rb"), "video/mp4")))
+        logger.debug("%s: fields: %s", meth_name, str(fields))
+
+        #
+        # http://toolbelt.readthedocs.org/en/latest/user.html#uploading-data
+        #
+        m = MultipartEncoder(fields=fields)
+        #logger.debug("%s: %s", meth_name, m.to_string())
+
         headers = {
           "Origin": "http://www.liveleak.com",
           "Accept-Encoding": "gzip,deflate,sdch",
           "Host": "llbucs.s3.amazonaws.com",
           "Accept-Language": "en-US,en;q=0.8,ja;q=0.6,ru;q=0.4",
           "User-Agent": USER_AGENT,
-          "Content-Type": content_type,
+          "Content-Type": m.content_type,
           "Accept": "*/*",
           "Referer": "http://www.liveleak.com/item?a=add_item",
-          "Connection": "keep-alive",
-          "Content-Length": len(content)}
+          "Connection": "keep-alive"
+        }
 
-        r = requests.post("https://llbucs.s3.amazonaws.com/", cookies=self.cookies, headers=headers, data=content)
+        r = requests.post("https://llbucs.s3.amazonaws.com/", cookies=self.cookies, headers=headers, data=m)
         logger.debug("%s: POST status_code: %d", meth_name, r.status_code)
         logger.debug("%s: add_item POST response: %s", meth_name, `r.text`)
 
@@ -248,37 +256,6 @@ def extract_connection(html):
     root = etree.parse(StringIO(html), etree.HTMLParser())
     connection = root.xpath("//input[@id='connection']")
     return connection[0].get("value")
-
-#
-# TODO: is there a way to get requests to handle this for us?
-#
-# Taken from http://code.activestate.com/recipes/146306/
-# http://stackoverflow.com/questions/1270518/python-standard-library-to-post-multipart-form-data-encoded-data
-#
-def encode_multipart_formdata(fields, files, boundary):
-    """
-    fields is a sequence of (name, value) elements for regular form fields.
-    files is a sequence of (name, filename, value) elements for data to be uploaded as files
-    Return (content_type, body) ready for httplib.HTTP instance
-    """
-    CRLF = '\r\n'
-    L = []
-    for (key, value) in fields:
-        L.append('--' + boundary)
-        L.append('Content-Disposition: form-data; name="%s"' % key)
-        L.append('')
-        L.append(value)
-    for (key, filename, value) in files:
-        L.append('--' + boundary)
-        L.append('Content-Disposition: form-data; name="%s"; filename="%s"' % (key, filename))
-        L.append('Content-Type: %s' % mimetypes.guess_type(filename)[0] or 'application/octet-stream')
-        L.append('')
-        L.append(value)
-    L.append('--' + boundary + '--')
-    L.append('')
-    body = CRLF.join(L)
-    content_type = 'multipart/form-data; boundary=%s' % boundary
-    return content_type, body
 
 def create_parser():
     from optparse import OptionParser
