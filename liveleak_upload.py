@@ -55,8 +55,9 @@ CATEGORIES["History"] = 32
 CATEGORIES["Other"] = 18
 
 class LiveLeakUploader(object):
-    def __init__(self):
+    def __init__(self, delete_after_upload=False):
         self.cookies = None
+        self.delete_after_upload = delete_after_upload
 
     def login(self, username, password):
         r = requests.post("http://www.liveleak.com/index.php", data={"user_name": username, "user_password": password, "login": 1}, headers={"User-Agent": USER_AGENT})
@@ -80,12 +81,10 @@ class LiveLeakUploader(object):
         connect_string = re.search("connect_string=(?P<connect_string>[^&]+)", r.text).group("connect_string")
         logger.debug("%s: connect_string: %s", meth_name, `connect_string`)
 
-        if self.debug_level:
-            print "<connect_string>"
-            print connect_string
-            print "</connect_string>"
-
-        self.__aws_upload(path, multipart_params, connect_string)
+        file_token = self.__aws_upload(path, multipart_params, connect_string)
+        if self.delete_after_upload:
+            self.__delete(file_token)
+            return None
 
         #
         # Publish the item
@@ -187,11 +186,13 @@ class LiveLeakUploader(object):
         if obj["success"] != 1:
             raise Exception(obj["msg"])
 
-        if self.debug_level:
-            print "<file_add_file_json>"
-            for key in obj:
-                print key, obj[key]
-            print "</file_add_file_json>"
+        return obj["file_token"]
+
+    def __delete(self, file_token):
+        meth_name = "__delete"
+        r = requests.get("http://www.liveleak.com/file", params={"a": "delete_file", "file_token": file_token}, cookies=self.cookies, headers={"User-Agent": USER_AGENT})
+        logger.debug("%s: GET status_code: %d", meth_name, r.status_code)
+        #logger.debug("%s: GET response: %s", meth_name, `r.text`)
 
 def extract_multipart_params(html):
     #
@@ -282,6 +283,7 @@ def encode_multipart_formdata(fields, files, boundary):
 def create_parser():
     from optparse import OptionParser
     p = OptionParser("usage: %prog [options] video.mp4")
+    p.add_option("-D", "--delete", dest="delete", action="store_true", default=False, help="Delete file after upload, do not publish")
     p.add_option("-t", "--title", dest="title", type="string", default="this is a test", help="Specify the title")
     p.add_option("-b", "--body", dest="body", type="string", default="this is a test", help="Specify the body")
     p.add_option("-T", "--tags", dest="tags", type="string", default="test", help="Specify the tags")
@@ -308,7 +310,7 @@ def main():
         import getpass
         password = getpass.getpass("password: ")
 
-    uploader = LiveLeakUploader()
+    uploader = LiveLeakUploader(opts.delete)
     uploader.login(username, password)
 
     path = args[0]
