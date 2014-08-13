@@ -9,6 +9,9 @@ import time
 import xml.etree.ElementTree as ET
 import urllib
 import json
+import logging
+
+logger = logging.getLogger(__file__)
 
 from StringIO import StringIO
 from lxml import etree
@@ -52,9 +55,8 @@ CATEGORIES["History"] = 32
 CATEGORIES["Other"] = 18
 
 class LiveLeakUploader(object):
-    def __init__(self, debug_level=0):
+    def __init__(self):
         self.cookies = None
-        self.debug_level = debug_level
 
     def login(self, username, password):
         r = requests.post("http://www.liveleak.com/index.php", data={"user_name": username, "user_password": password, "login": 1}, headers={"User-Agent": USER_AGENT})
@@ -64,25 +66,19 @@ class LiveLeakUploader(object):
         self.cookies["liveleak_user_password"] = r.cookies["liveleak_user_password"]
 
     def upload(self, path, title, body, tags, category):
+        meth_name = "upload"
         r = requests.get("http://www.liveleak.com/item?a=add_item", cookies=self.cookies, headers={"User-Agent": USER_AGENT})
-        if self.debug_level:
-            print r.status_code
+        logger.debug("%s: add_item GET status_code: %d", meth_name, r.status_code)
         assert r.status_code == 200, "failed to fetch add_item form"
 
         multipart_params = extract_multipart_params(r.text)
-        if self.debug_level:
-            print "<multipart_params>"
-            print multipart_params
-            print "</multipart_params>"
+        logger.debug("%s: multipart_params: %s", meth_name, `multipart_params`)
 
         connection = extract_connection(r.text)
-
-        if self.debug_level:
-            print "<connection>"
-            print connection
-            print "</connection>"
+        logger.debug("%s: connection: %s", meth_name, connection)
 
         connect_string = re.search("connect_string=(?P<connect_string>[^&]+)", r.text).group("connect_string")
+        logger.debug("%s: connect_string: %s", meth_name, `connect_string`)
 
         if self.debug_level:
             print "<connect_string>"
@@ -112,12 +108,8 @@ class LiveLeakUploader(object):
             }
 
         r = requests.post("http://www.liveleak.com/item?a=add_item&ajax=1", data=data, cookies=self.cookies, headers={"User-Agent": USER_AGENT})
-
-        if self.debug_level:
-            print "add_item POST", r.status_code
-            print "<add_item_post>"
-            print r.text
-            print "</add_item_post>"
+        logger.debug("%s: add_item POST status_code: %d", meth_name, r.status_code)
+        logger.debug("%s: add_item POST response: %s", meth_name, `r.text`)
 
         obj = json.loads(r.text)
         if obj["success"] != 1:
@@ -126,7 +118,8 @@ class LiveLeakUploader(object):
         return obj["item_token"]
 
     def __aws_upload(self, path, multipart_params, connect_string):
-        """Upload a file to AWS. Raises Exception on failure."""
+        """Upload a file to AWS. Raises Exception on failure. Returns a file_token in case of successs."""
+        meth_name = "__aws_upload"
         boundary = "----WebKitFormBoundarymNf7g3wD3ATtvrKC"
         #
         # Mangle the filename (add timestamp, remove special characters).
@@ -165,12 +158,8 @@ class LiveLeakUploader(object):
           "Content-Length": len(content)}
 
         r = requests.post("https://llbucs.s3.amazonaws.com/", cookies=self.cookies, headers=headers, data=content)
-
-        if self.debug_level:
-            print "upload_file POST", r.status_code
-            print "<amazon_response_text>"
-            print r.text
-            print "<amazon_response_text>"
+        logger.debug("%s: POST status_code: %d", meth_name, r.status_code)
+        logger.debug("%s: add_item POST response: %s", meth_name, `r.text`)
 
         assert r.status_code == 201, "couldn't upload to AWS"
 
@@ -179,10 +168,7 @@ class LiveLeakUploader(object):
         for key in "Location Bucket Key ETag".split(" "):
             amazon_response[key] = root.find(key).text
 
-        if self.debug_level:
-            print "<amazon_response>"
-            print amazon_response
-            print "</amazon_response>"
+        logger.debug("%s: amazon_response: %s", meth_name, `amazon_response`)
 
         query_params = {"a": "add_file",
                 "ajax": 1,
@@ -191,18 +177,11 @@ class LiveLeakUploader(object):
                 "fn": urllib.quote(filename),
                 "resp": urllib.quote(r.text)}
 
-        if self.debug_level:
-            print "<query_params>"
-            print query_params
-            print "</query_params>"
+        logger.debug("%s: query_params: %s", meth_name, `query_params`)
 
         r = requests.get("http://www.liveleak.com/file", params=query_params, cookies=self.cookies, headers={"User-Agent": USER_AGENT})
-
-        if self.debug_level:
-            print r.status_code
-            print "<file_add_file>"
-            print r.text
-            print "</file_add_file>"
+        logger.debug("%s: GET status_code: %d", meth_name, r.status_code)
+        logger.debug("%s: GET response: %s", meth_name, `r.text`)
 
         obj = json.loads(r.text)
         if obj["success"] != 1:
@@ -303,7 +282,6 @@ def encode_multipart_formdata(fields, files, boundary):
 def create_parser():
     from optparse import OptionParser
     p = OptionParser("usage: %prog [options] video.mp4")
-    p.add_option("-d", "--debug", dest="debug", type="int", default=0, help="Set the debug level")
     p.add_option("-t", "--title", dest="title", type="string", default="this is a test", help="Specify the title")
     p.add_option("-b", "--body", dest="body", type="string", default="this is a test", help="Specify the body")
     p.add_option("-T", "--tags", dest="tags", type="string", default="test", help="Specify the tags")
@@ -318,6 +296,9 @@ def main():
     if len(args) != 1:
         parser.error("invalid number of arguments")
 
+    logging.basicConfig(level=logging.INFO)
+    logger.setLevel(logging.DEBUG)
+
     username = opts.username
     if not username:
         username = raw_input("username: ")
@@ -327,7 +308,7 @@ def main():
         import getpass
         password = getpass.getpass("password: ")
 
-    uploader = LiveLeakUploader(opts.debug)
+    uploader = LiveLeakUploader()
     uploader.login(username, password)
 
     path = args[0]
