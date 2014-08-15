@@ -8,6 +8,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.DEBUG)
 
+
 def video_exists(developer_key, youtube_id):
     meth_name = "video_exists"
     url = "https://www.googleapis.com/youtube/v3/videos"
@@ -19,9 +20,13 @@ def video_exists(developer_key, youtube_id):
     obj = json.loads(r.text)
     return obj["pageInfo"]["totalResults"] > 0
 
-if __name__ == "__main__":
+
+def main():
     import sys
     import yaml
     with open("config.yml") as fin:
         doc = yaml.load(fin)
     print video_exists(doc["google_developer_key"], sys.argv[1])
+
+if __name__ == "__main__":
+    main()
