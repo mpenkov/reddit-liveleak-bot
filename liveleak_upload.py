@@ -215,9 +215,8 @@ def extract_multipart_params(html):
             "success_action_status", "AWSAccessKeyId", "policy", "signature"]
     multipart_params = {}
     ptn = re.compile("'(?P<key>%s)' *: *'(?P<value>[^']+)'" % "|".join(keys))
-    lines = [l.strip() for l in html.split("\n")]
     found_params = False
-    for i, line in enumerate(lines):
+    for line in [l.strip() for l in html.split("\n")]:
         if found_params and line.startswith("},"):
             break
         elif found_params:
