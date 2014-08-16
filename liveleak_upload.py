@@ -209,51 +209,27 @@ class LiveLeakUploader(object):
 
 
 def extract_multipart_params(html):
-    #
-    # FIXME: really fragile string search-based approach
-    # Ideally, we want to parse the JavaScript and obtain the
-    # multipart_params variable.
-    #
-    # multipart_params: {
-    #     'key': '2014/Jul/16/LiveLeak-dot-com-c9e_1405559197-${filename}', // use filename as a key
-    #     'Filename': 'LiveLeak-dot-com-c9e_1405559197-${filename}', // adding this to keep consistency across the runtimes (ignored in flash mode)
-    #     'acl': 'private',
-    #     'Expires': 'Thu, 01 Jan 2037 16:00:00 GMT',
-    #     'Content-Type': ' ', //note, leave space otherwise content-type is not passed on in flash mode
-    #     'success_action_status': '201',
-    #     'AWSAccessKeyId' : 'AKIAIWBZFTE3KNSLSTTQ',
-    #     'policy': 'eyJleHBpcmF0aW9uIjoiMjAxNC0wNy0xN1QyMTowNjozNy4wMDBaIiwiY29uZGl0aW9ucyI6W3siYnVja2V0IjoibGxidWNzIn0seyJhY2wiOiJwcml2YXRlIn0seyJFeHBpcmVzIjoiVGh1LCAwMSBKYW4gMjAzNyAxNjowMDowMCBHTVQifSxbInN0YXJ0cy13aXRoIiwiJGtleSIsIjIwMTRcL0p1bFwvMTZcL0xpdmVMZWFrLWRvdC1jb20tYzllXzE0MDU1NTkxOTciXSxbInN0YXJ0cy13aXRoIiwiJENvbnRlbnQtVHlwZSIsIiJdLFsiY29udGVudC1sZW5ndGgtcmFuZ2UiLDAsIjIwOTcxNTIwMDAiXSx7InN1Y2Nlc3NfYWN0aW9uX3N0YXR1cyI6IjIwMSJ9LFsic3RhcnRzLXdpdGgiLCIkbmFtZSIsIiJdLFsic3RhcnRzLXdpdGgiLCIkRmlsZW5hbWUiLCIiXV19',
-    #     'signature': 'NpZZGm5Fan9fOCpR47cS2lUw8e8='
-    # },
-    lines = [l.strip() for l in html.split("\n")]
-    first_idx = last_idx = -1
-    for i, line in enumerate(lines):
-        if first_idx == -1:
-            if line.startswith("multipart_params: {"):
-                first_idx = i+1
-        elif last_idx == -1:
-            if line.startswith("}"):
-                last_idx = i
-                break
+    """Extract the multipart_params dict from the add_item.html.
+    Raises an assertion on failure."""
+    keys = ["key", "Filename", "acl", "Expires", "Content-Type", 
+            "success_action_status", "AWSAccessKeyId", "policy", "signature"]
     multipart_params = {}
-    for line in lines[first_idx:last_idx]:
-        #
-        # Get rid of JavaScript comments
-        #
-        try:
-            line = line[:line.index("//")]
-        except ValueError:
-            pass
-        key, value = line.split(":", 1)
-        #
-        # Strip quotes
-        #
-        key = re.sub(r"^\s*'", "", re.sub(r"'\s*$", "", key))
-        value = re.sub(r"^\s*'", "", re.sub(r"',?\s*$", "", value))
-        multipart_params[str(key)] = str(value)
+    ptn = re.compile("'(?P<key>%s)' *: *'(?P<value>[^']+)'" % "|".join(keys))
+    lines = [l.strip() for l in html.split("\n")]
+    found_params = False
+    for i, line in enumerate(lines):
+        if found_params and line.startswith("},"):
+            break
+        elif found_params:
+            match = ptn.search(line)
+            if not match:
+                continue
+            multipart_params[match.group("key")] = match.group("value")
+        elif line.startswith("multipart_params: {"):
+            found_params = True
+            continue
     assert multipart_params, "couldn't extract multipart_params from HTML"
     return multipart_params
-
 
 def extract_connection(html):
     #

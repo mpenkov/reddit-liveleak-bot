@@ -3,6 +3,7 @@ import os.path as P
 import yaml
 
 from bot import extract_youtube_id, MENTION_REGEX
+from liveleak_upload import extract_multipart_params
 
 class TestMentionRegex(unittest.TestCase):
     def test_positive(self):
@@ -87,3 +88,26 @@ class TestUpload(unittest.TestCase):
     #
     # TODO: test upload for bad category name
     #
+
+
+class TestMultipartParams(unittest.TestCase):
+    def test_parse(self):
+        path = P.join(P.dirname(P.abspath(__file__)), "test", "add_item.html")
+        with open(path) as fin:
+            html = fin.read()
+        p = extract_multipart_params(html)
+        self.assertEqual(
+            p["key"],
+            "2014/Jul/16/LiveLeak-dot-com-2f3_1405564338-${filename}")
+        self.assertEqual(
+            p["Filename"],
+            "LiveLeak-dot-com-2f3_1405564338-${filename}")
+        self.assertEqual(p["acl"], "private")
+        self.assertEqual(p["Expires"], "Thu, 01 Jan 2037 16:00:00 GMT")
+        self.assertEqual(p["Content-Type"], " ")
+        self.assertEqual(p["success_action_status"], "201")
+        self.assertEqual(p["AWSAccessKeyId"], "AKIAIWBZFTE3KNSLSTTQ")
+        self.assertEqual(
+            p["policy"],
+            "eyJleHBpcmF0aW9uIjoiMjAxNC0wNy0xN1QyMjozMjoxOC4wMDBaIiwiY29uZGl0aW9ucyI6W3siYnVja2V0IjoibGxidWNzIn0seyJhY2wiOiJwcml2YXRlIn0seyJFeHBpcmVzIjoiVGh1LCAwMSBKYW4gMjAzNyAxNjowMDowMCBHTVQifSxbInN0YXJ0cy13aXRoIiwiJGtleSIsIjIwMTRcL0p1bFwvMTZcL0xpdmVMZWFrLWRvdC1jb20tMmYzXzE0MDU1NjQzMzgiXSxbInN0YXJ0cy13aXRoIiwiJENvbnRlbnQtVHlwZSIsIiJdLFsiY29udGVudC1sZW5ndGgtcmFuZ2UiLDAsIjIwOTcxNTIwMDAiXSx7InN1Y2Nlc3NfYWN0aW9uX3N0YXR1cyI6IjIwMSJ9LFsic3RhcnRzLXdpdGgiLCIkbmFtZSIsIiJdLFsic3RhcnRzLXdpdGgiLCIkRmlsZW5hbWUiLCIiXV19")
+        self.assertEqual(p["signature"], "VufnGKzbNncIeL0AMZ7nWi55FTo=")
