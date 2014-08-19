@@ -409,7 +409,16 @@ class Bot(object):
             submission = self.r.get_submission(video.redditSubmissionPermalink)
             if self.check_replies(submission):
                 continue
-            self.repost_deleted_video(video, submission)
+
+            try:
+                self.repost_deleted_video(video, submission)
+            except:
+                #
+                # The submission could have been deleted
+                #
+                video.state = State.ERROR
+                self.session.commit()
+
 
     @transaction
     def repost_deleted_video(self, video, submission):
