@@ -432,7 +432,7 @@ class Bot(object):
 
     def reply_success(self, thing, liveleak_id):
         if isinstance(thing, praw.objects.Submission):
-            fun = thing.comment
+            fun = thing.add_comment
         elif isinstance(thing, praw.objects.Comment):
             fun = thing.reply
         else:
