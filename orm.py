@@ -6,9 +6,11 @@ from sqlalchemy import ForeignKey
 
 Base = declarative_base()
 
-STATE_DOWNLOADED = 2
-STATE_REPOSTED = 3
-STATE_STALE = 4
+class State(object):
+    DOWNLOADED = 2
+    REPOSTED = 3
+    STALE = 4
+    ERROR = 5
 
 
 class Subreddit(Base):
@@ -63,7 +65,7 @@ class Mention(Base):
         self.youtubeId = youtube_id
         self.command = command
         self.discovered = datetime.datetime.now()
-        self.state = STATE_DOWNLOADED
+        self.state = State.DOWNLOADED
 
     def __repr__(self):
         return "<Mention(permalink=%s, youtubeId=%s, command=%s)>" % (

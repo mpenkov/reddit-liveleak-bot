@@ -27,7 +27,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import NoResultFound
 
 from orm import Subreddit, Mention, Video
-from orm import STATE_DOWNLOADED, STATE_REPOSTED, STATE_STALE
+from orm import State
 from liveleak_upload import LiveLeakUploader
 from user_agent import USER_AGENT
 from video_exists import video_exists
@@ -256,7 +256,7 @@ class Bot(object):
         meth_name = "try_repost"
         submission_comments = collections.defaultdict(list)
         for mention in self.session.query(Mention).filter_by(
-                state=STATE_DOWNLOADED):
+                state=State.DOWNLOADED):
             comment = self.r.get_submission(
                 mention.permalink).comments[0]
             #
@@ -287,7 +287,7 @@ class Bot(object):
     def repost_requested_video(self, video, comments):
         self.repost_video(video)
         for comment in comments:
-            comment.mention.state = STATE_REPOSTED
+            comment.mention.state = State.REPOSTED
             self.reply_success(comment, video.liveleakId)
 
     @transaction
@@ -320,7 +320,7 @@ class Bot(object):
 
         assert video.localPath
 
-        video.state = STATE_DOWNLOADED
+        video.state = State.DOWNLOADED
         video.downloaded = dt.datetime.now()
         video.localModified = dt.datetime.now()
         return video
@@ -331,18 +331,18 @@ class Bot(object):
         hours stale."""
         cutoff = dt.datetime.now() - dt.timedelta(hours=self.hold_hours)
         for mention in self.session.query(Mention).filter_by(
-                state=STATE_DOWNLOADED):
+                state=State.DOWNLOADED):
             if mention.discovered < cutoff:
-                mention.state = STATE_STALE
+                mention.state = State.STALE
 
         for video in self.session.query(Video):
-            if video.discovered < cutoff and video.state != STATE_REPOSTED:
-                video.state = STATE_STALE
+            if video.discovered < cutoff and video.state != State.REPOSTED:
+                video.state = State.STALE
                 video.localModified = dt.datetime.now()
 
     def purge(self):
         """Delete stale video data."""
-        for video in self.session.query(Video).filter_by(state=STATE_STALE):
+        for video in self.session.query(Video).filter_by(state=State.STALE):
             purge_video(video)
 
     @transaction
@@ -356,7 +356,7 @@ class Bot(object):
                 pass
 
         video.localPath = None
-        video.state = STATE_PURGED
+        video.state = State.PURGED
         video.localModified = dt.datetime.now()
 
     def repost_video(self, video):
@@ -376,7 +376,7 @@ class Bot(object):
                 video.localPath, submission.title, body, subreddit,
                 self.subreddits[subreddit]["liveleak_category"])
         video.liveleakId = liveleak_id
-        video.state = STATE_REPOSTED
+        video.state = State.REPOSTED
 
     def check_replies(self, thing):
         """Return true if we've replied to the submission/comment already.
@@ -403,7 +403,7 @@ class Bot(object):
         """Go through all our downloaded videos and check if they have
         been deleted from YouTube.  If yes, repost them."""
         for video in self.session.query(Video).filter_by(
-                state=STATE_DOWNLOADED):
+                state=State.DOWNLOADED):
             if video_exists(self.google_developer_key, video.youtubeId):
                 continue
             submission = self.r.get_submission(video.redditSubmissionPermalink)
