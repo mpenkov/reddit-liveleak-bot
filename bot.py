@@ -427,7 +427,7 @@ class Bot(object):
         # Technically, there could be comments summoning the bot as well.
         # Should we reply to them instead?
         #
-        submission.add_comment(self.make_comment_repost(video.liveleakId))
+        self.reply_success(submission, video.liveleakId)
         video.deleted = dt.datetime.now()
 
     def reply_success(self, thing, liveleak_id):
