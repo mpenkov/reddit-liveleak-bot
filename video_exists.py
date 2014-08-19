@@ -4,9 +4,8 @@ import json
 import logging
 from user_agent import USER_AGENT
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__file__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 def video_exists(developer_key, youtube_id):
@@ -15,7 +14,10 @@ def video_exists(developer_key, youtube_id):
     headers = {"User-Agent": USER_AGENT}
     params = {"key": developer_key, "part": "id", "id": youtube_id}
     r = requests.get(url, params=params, headers=headers)
-    logger.debug("%s: status_code: %d", meth_name, r.status_code)
+    logger.debug("%s: youtube_id: %s status_code: %d", meth_name, `youtube_id`, r.status_code)
+    if r.status_code != 200:
+        logger.error("%s: unexpected status_code: %d", meth_name, r.status_code)
+        logger.error("%s: GET response: %s", meth_name, `r.text`)
     assert r.status_code == 200
     obj = json.loads(r.text)
     return obj["pageInfo"]["totalResults"] > 0
