@@ -1,14 +1,11 @@
 import praw
+from praw.errors import APIException
 import re
-import sqlite3
 import datetime as dt
 import subprocess as sub
 import os
 import os.path as P
 import yaml
-import traceback
-import urllib
-import re
 import collections
 import logging
 
@@ -28,7 +25,7 @@ from sqlalchemy.orm.exc import NoResultFound
 
 from orm import Subreddit, Mention, Video
 from orm import State
-from liveleak_upload import LiveLeakUploader
+from liveleak_upload import LiveLeakUploader, LiveLeakException
 from user_agent import USER_AGENT
 from video_exists import video_exists
 
@@ -63,6 +60,20 @@ def transaction(func):
         except Exception as ex:
             logging.exception(ex)
             self.session.rollback()
+            return None
+    return inner
+
+
+def error_prone_praw_api_call(func):
+    """Used to decorate the most error-prone PRAW API calls.
+
+    For example, commenting on a submission can fail if the submission has
+    been deleted."""
+    def inner(self, *args, **kwargs):
+        try:
+            return func(self, *args, **kwargs)
+        except APIException as ex:
+            logging.exception(ex)
             return None
     return inner
 
@@ -225,7 +236,7 @@ class Bot(object):
                 video = self.session.query(Video).filter_by(
                     youtubeId=youtube_id).one()
                 if video.liveleakId:
-                    logger.info(
+                    logging.info(
                         "%s: this video has already been reposted: %s",
                         meth_name, youtube_id)
                     self.reply_success(new_comment, video.liveleakId)
@@ -281,7 +292,11 @@ class Bot(object):
                 youtubeId=youtube_id).one()
             assert P.isfile(video.localPath)
 
-            self.repost_requested_video(video, submission_comments[submission])
+            try:
+                self.repost_requested_video(video,
+                                            submission_comments[submission])
+            except LiveLeakException as lle:
+                logging.exception(lle)
 
     @transaction
     def repost_requested_video(self, video, comments):
@@ -343,7 +358,7 @@ class Bot(object):
     def purge(self):
         """Delete stale video data."""
         for video in self.session.query(Video).filter_by(state=State.STALE):
-            purge_video(video)
+            self.purge_video(video)
 
     @transaction
     def purge_video(self, video):
@@ -412,13 +427,8 @@ class Bot(object):
 
             try:
                 self.repost_deleted_video(video, submission)
-            except:
-                #
-                # The submission could have been deleted
-                #
-                video.state = State.ERROR
-                self.session.commit()
-
+            except LiveLeakException as lle:
+                logging.exception(lle)
 
     @transaction
     def repost_deleted_video(self, video, submission):
@@ -430,6 +440,7 @@ class Bot(object):
         self.reply_success(submission, video.liveleakId)
         video.deleted = dt.datetime.now()
 
+    @error_prone_praw_api_call
     def reply_success(self, thing, liveleak_id):
         if isinstance(thing, praw.objects.Submission):
             fun = thing.add_comment
@@ -440,6 +451,7 @@ class Bot(object):
         comment = (COMMENT_MIRROR % liveleak_id) + COMMENT_FOOTER
         fun(comment)
 
+    @error_prone_praw_api_call
     def reply_error(self, thing, formatstr, *args):
         if isinstance(thing, praw.objects.Submission):
             fun = thing.comment

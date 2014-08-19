@@ -2,9 +2,7 @@
 
 import requests
 import re
-import mimetypes
 import os.path as P
-import sys
 import time
 import xml.etree.ElementTree as ET
 import urllib
@@ -20,7 +18,7 @@ from requests_toolbelt import MultipartEncoder
 from user_agent import USER_AGENT
 
 CATEGORIES = {
-    "World News": 2, "Ukraine": 37, "Regional News": 3, "Other News": 4, 
+    "World News": 2, "Ukraine": 37, "Regional News": 3, "Other News": 4,
     "Politics": 5, "Syria": 33, "Afghanistan": 8, "Iraq": 7, "Iran": 9,
     "Other Middle East": 10, "WTF": 13, "Creative": 14,
     "Other Entertainment": 16, "Music": 20, "Liveleak Challenges": 21,
@@ -30,6 +28,10 @@ CATEGORIES = {
     "Propaganda": 28, "Science and Technology": 30, "Nature": 31,
     "History": 32, "Other": 18
 }
+
+
+class LiveLeakException(Exception):
+    pass
 
 
 class LiveLeakUploader(object):
@@ -59,6 +61,8 @@ class LiveLeakUploader(object):
         multipart_params = extract_multipart_params(r.text)
         logger.debug(
             "%s: multipart_params: %s", meth_name, repr(multipart_params))
+        if multipart_params is None:
+            raise LiveLeakException("unable to parse upload form")
 
         connection = extract_connection(r.text)
         logger.debug("%s: connection: %s", meth_name, connection)
@@ -211,7 +215,8 @@ class LiveLeakUploader(object):
 def extract_multipart_params(html):
     """Extract the multipart_params dict from the add_item.html.
     Raises an assertion on failure."""
-    keys = ["key", "Filename", "acl", "Expires", "Content-Type", 
+    meth_name = "extract_multipart_params"
+    keys = ["key", "Filename", "acl", "Expires", "Content-Type",
             "success_action_status", "AWSAccessKeyId", "policy", "signature"]
     multipart_params = {}
     ptn = re.compile("'(?P<key>%s)' *: *'(?P<value>[^']+)'" % "|".join(keys))
@@ -227,14 +232,19 @@ def extract_multipart_params(html):
         elif line.startswith("multipart_params: {"):
             found_params = True
             continue
-    assert multipart_params, "couldn't extract multipart_params from HTML"
+    for k in keys:
+        if k not in multipart_params:
+            logging.error("%s: missing key: %s", meth_name, repr(k))
+            return None
     return multipart_params
+
 
 def extract_connection(html):
     #
     # Get the connection number (the value of the hidden input below):
     #
-    # <input id="connection" name="connection" value="772_1405579810" type="hidden"/>
+    # <input id="connection" name="connection" value="772_1405579810"
+    #  type="hidden"/>
     #
     root = etree.parse(StringIO(html), etree.HTMLParser())
     connection = root.xpath("//input[@id='connection']")
@@ -245,7 +255,7 @@ def create_parser():
     from optparse import OptionParser
     p = OptionParser("usage: %prog [options] video.mp4")
     p.add_option("-D", "--delete", dest="delete", action="store_true",
-                 default=False, help="Delete file after upload, do not publish")
+                 default=False, help="Delete file after upload, don't publish")
     p.add_option("-t", "--title", dest="title", type="string",
                  default="this is a test", help="Specify the title")
     p.add_option("-b", "--body", dest="body", type="string",
@@ -284,7 +294,7 @@ def main():
 
     path = args[0]
     if opts.category not in CATEGORIES:
-        parser.error("invalid category: %s" % repr(category))
+        parser.error("invalid category: %s" % repr(opts.category))
     uploader.upload(path, opts.title, opts.body, opts.tags, opts.category)
 
 if __name__ == "__main__":
