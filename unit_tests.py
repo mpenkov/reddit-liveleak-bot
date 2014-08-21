@@ -3,7 +3,7 @@ import os.path as P
 import yaml
 
 from liveleak_upload import LiveLeakUploader
-from bot import extract_youtube_id, MENTION_REGEX
+from bot import extract_youtube_id, MENTION_REGEX, locate_video
 from liveleak_upload import extract_multipart_params
 from video_exists import video_exists
 
@@ -64,11 +64,18 @@ v=LEN5rn47gYQ"
         url = "http://i.imgur.com/KJ0h3nZ.png"
         self.assertEquals(extract_youtube_id(url), None)
 
+    def test_negative2(self):
         url = "https://twitter.com/Praporec/status/489524665723809792/photo/1"
         self.assertEquals(extract_youtube_id(url), None)
 
+    def test_attribution(self):
+        url = "http://www.youtube.com/attribution_link?\
+a=P3m5pZfhr5Y&u=%2Fwatch%3Fv%3DHnc-1rXLx_4%26feature%3Dshare"
+        self.assertEquals(extract_youtube_id(url), "Hnc-1rXLx_4")
+
 
 class TestVideoExists(unittest.TestCase):
+
     def setUp(self):
         with open(P.join(CURRENT_DIR, "config.yml")) as fin:
             self.key = yaml.load(fin)["google_developer_key"]
@@ -83,6 +90,7 @@ class TestVideoExists(unittest.TestCase):
 
 
 class TestUpload(unittest.TestCase):
+
     def setUp(self):
         self.up = LiveLeakUploader(True)
 
@@ -129,3 +137,15 @@ oIiwiJENvbnRlbnQtVHlwZSIsIiJdLFsiY29udGVudC1sZW5ndGgtcmFuZ2UiLDAsIjIwOTcxNTIw\
 MDAiXSx7InN1Y2Nlc3NfYWN0aW9uX3N0YXR1cyI6IjIwMSJ9LFsic3RhcnRzLXdpdGgiLCIkbmFtZ\
 SIsIiJdLFsic3RhcnRzLXdpdGgiLCIkRmlsZW5hbWUiLCIiXV19")
         self.assertEqual(p["signature"], "VufnGKzbNncIeL0AMZ7nWi55FTo=")
+
+
+class TestLocateVideo(unittest.TestCase):
+
+    def test_positive(self):
+        actual = locate_video(P.join(CURRENT_DIR, "test"), "foreman_cif")
+        expected = P.join(CURRENT_DIR, "test", "foreman_cif.mp4")
+        self.assertEqual(expected, actual)
+
+    def test_negative(self):
+        actual = locate_video(P.join(CURRENT_DIR, "test"), "not_there")
+        self.assertEqual(None, actual)
