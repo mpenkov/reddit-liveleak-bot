@@ -44,7 +44,8 @@ class LiveLeakUploader(object):
         r = requests.post(
             "http://www.liveleak.com/index.php",
             data=data, headers={"User-Agent": USER_AGENT})
-        assert r.status_code == 200
+        if r.status_code != 200:
+            raise LiveLeakException("bad HTTP response (%d)" % r.status_code)
         self.cookies = {
             "liveleak_user_token": r.cookies["liveleak_user_token"],
             "liveleak_user_password": r.cookies["liveleak_user_password"]}
@@ -56,7 +57,8 @@ class LiveLeakUploader(object):
             cookies=self.cookies, headers={"User-Agent": USER_AGENT})
         logger.debug(
             "%s: add_item GET status_code: %d", meth_name, r.status_code)
-        assert r.status_code == 200, "failed to fetch add_item form"
+        if r.status_code != 200:
+            raise LiveLeakException("bad HTTP response (%d)" % r.status_code)
 
         multipart_params = extract_multipart_params(r.text)
         logger.debug(
@@ -198,7 +200,7 @@ class LiveLeakUploader(object):
 
         obj = json.loads(r.text)
         if obj["success"] != 1:
-            raise Exception(obj["msg"])
+            raise LiveLeakException(obj["msg"])
 
         return obj["file_token"]
 
@@ -214,7 +216,7 @@ class LiveLeakUploader(object):
 
 def extract_multipart_params(html):
     """Extract the multipart_params dict from the add_item.html.
-    Raises an assertion on failure."""
+    Returns a dictionary on success, None on failure."""
     meth_name = "extract_multipart_params"
     keys = ["key", "Filename", "acl", "Expires", "Content-Type",
             "success_action_status", "AWSAccessKeyId", "policy", "signature"]

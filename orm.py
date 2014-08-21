@@ -1,10 +1,11 @@
+import os.path as P
 import datetime
-import sqlalchemy
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float
+from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import ForeignKey
 
 Base = declarative_base()
+
 
 class State(object):
     DOWNLOADED = 2
@@ -50,6 +51,9 @@ class Video(Base):
     def __repr__(self):
         return "<Video(id=%s, localPath=%s, liveleakId=%s)>" % (
             repr(self.youtubeId), repr(self.localPath), repr(self.liveleakId))
+
+    def has_file(self):
+        return self.localPath and P.isfile(self.localPath)
 
 
 class Mention(Base):

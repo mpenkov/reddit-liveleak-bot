@@ -25,9 +25,9 @@ from sqlalchemy.orm.exc import NoResultFound
 
 from orm import Subreddit, Mention, Video
 from orm import State
-from liveleak_upload import LiveLeakUploader, LiveLeakException
+from liveleak_upload import LiveLeakUploader
 from user_agent import USER_AGENT
-from video_exists import video_exists
+from video_exists import video_exists, YoutubeException
 
 MENTION_REGEX = re.compile(
     r"redditliveleakbot \+(?P<command>\w+)", re.IGNORECASE)
@@ -42,10 +42,6 @@ COMMENT_FOOTER = """
 ^| [^FAQ](http://www.reddit.com/r/redditliveleakbot/wiki/index) ^|"""
 
 
-class VideoUnavailableException(Exception):
-    pass
-
-
 def transaction(func):
     """Wrap up a function call as a transaction.
     If the transaction succeeds, commit the session.
@@ -55,11 +51,11 @@ def transaction(func):
     def inner(self, *args, **kwargs):
         try:
             ret = func(self, *args, **kwargs)
-            self.session.commit()
+            self.db.commit()
             return ret
         except Exception as ex:
             logging.exception(ex)
-            self.session.rollback()
+            self.db.rollback()
             return None
     return inner
 
@@ -133,7 +129,7 @@ class Bot(object):
 
         engine = create_engine(doc["dbpath"])
         Session = sessionmaker(bind=engine)
-        self.session = Session()
+        self.db = Session()
 
         self.r = praw.Reddit(USER_AGENT)
         self.r.login(self.reddit_username, self.reddit_password)
@@ -153,10 +149,10 @@ class Bot(object):
     @transaction
     def get_subreddit_info(self, sr):
         try:
-            sub_info = self.session.query(Subreddit).filter_by(id=sr).one()
+            sub_info = self.db.query(Subreddit).filter_by(id=sr).one()
         except NoResultFound:
             sub_info = Subreddit(id=sr)
-            self.session.add(sub_info)
+            self.db.add(sub_info)
         return sub_info
 
     def download_new_videos(self, subreddit):
@@ -182,16 +178,17 @@ class Bot(object):
             logging.info("%s: new video submission: %s %s", meth_name,
                          new_submission.permalink, new_submission.url)
 
+            download = True
             try:
-                video = self.session.query(Video).filter_by(
-                    youtubeId=youtube_id).one()
-                if video.localPath is None or not P.isfile(video.localPath):
-                    raise NoResultFound("need to download this video again")
+                v = self.db.query(Video).filter_by(youtubeId=youtube_id).one()
+                download = not v.has_file()
             except NoResultFound:
+                pass
+            if download:
                 self.download_video(youtube_id, new_submission.permalink)
 
         sub_info.mostRecentSubmission = now
-        self.session.commit()
+        self.db.commit()
 
     def monitor_mentions(self, subreddit):
         """Monitor the specific subreddits for comments that mention
@@ -214,10 +211,6 @@ class Bot(object):
             if self.check_replies(new_comment):
                 continue
 
-            #
-            # TODO: If the bot starts getting overwhelmed, do the
-            # downloading AFTER we're checking for upvotes
-            #
             youtube_id = extract_youtube_id(new_comment.submission.url)
             if youtube_id is None:
                 self.reply_error(
@@ -232,44 +225,44 @@ class Bot(object):
             # If we haven't, then download it.
             # Notify the poster of any problems during downloading.
             #
+            download = True
             try:
-                video = self.session.query(Video).filter_by(
-                    youtubeId=youtube_id).one()
-                if video.liveleakId:
+                v = self.db.query(Video).filter_by(youtubeId=youtube_id).one()
+                if v.liveleakId:
                     logging.info(
                         "%s: this video has already been reposted: %s",
                         meth_name, youtube_id)
-                    self.reply_success(new_comment, video.liveleakId)
+                    self.reply_success(new_comment, v.liveleakId)
                     continue
-                elif video.localPath is None or not P.isfile(video.localPath):
-                    raise NoResultFound("need to download this video again")
-                assert P.isfile(video.localPath)
+                download = not v.has_file()
             except NoResultFound:
-                video = self.download_video(
-                    youtube_id, new_comment.submission.permalink)
-                if video is None:
+                pass
+
+            if download:
+                v = self.download_video(youtube_id,
+                                        new_comment.submission.permalink)
+                if v.state == State.ERROR:
                     url = new_comment.submission.url
-                    self.reply_error(
-                        new_comment, "couldn't download [this video](%s)", url)
+                    self.reply_error(new_comment,
+                                     "couldn't download [this video](%s)", url)
                     continue
 
             mention = Mention(new_comment.permalink, youtube_id,
                               m.group("command"))
-            self.session.add(mention)
-            self.session.commit()
+            self.db.add(mention)
+            self.db.commit()
 
         sub_info.mostRecentComment = now
-        self.session.commit()
+        self.db.commit()
 
     def try_repost(self, subreddit):
         """Monitor currently active Mentions for instances when the bot
         should be summoned."""
         meth_name = "try_repost"
         submission_comments = collections.defaultdict(list)
-        for mention in self.session.query(Mention).filter_by(
+        for mention in self.db.query(Mention).filter_by(
                 state=State.DOWNLOADED):
-            comment = self.r.get_submission(
-                mention.permalink).comments[0]
+            comment = self.r.get_submission(mention.permalink).comments[0]
             #
             # TODO: this is a bit hacky
             #
@@ -288,22 +281,18 @@ class Bot(object):
             # The query below can never fail since the
             # Mention.state is DOWNLOADED
             #
-            video = self.session.query(Video).filter_by(
-                youtubeId=youtube_id).one()
-            assert P.isfile(video.localPath)
+            v = self.db.query(Video).filter_by(youtubeId=youtube_id).one()
+            assert v.has_file()
 
-            try:
-                self.repost_requested_video(video,
-                                            submission_comments[submission])
-            except LiveLeakException as lle:
-                logging.exception(lle)
+            self.repost_video(v)
+            if v.liveleakId is None:
+                return
 
-    @transaction
-    def repost_requested_video(self, video, comments):
-        self.repost_video(video)
-        for comment in comments:
-            comment.mention.state = State.REPOSTED
-            self.reply_success(comment, video.liveleakId)
+            for comment in submission_comments[submission]:
+                comment.mention.state = State.REPOSTED
+                self.reply_success(comment, v.liveleakId)
+
+            self.db.commit()
 
     @transaction
     def download_video(self, youtube_id, permalink):
@@ -313,56 +302,55 @@ class Bot(object):
         """
         meth_name = "download_video"
         try:
-            video = self.session.query(Video).filter_by(
-                youtubeId=youtube_id).one()
+            v = self.db.query(Video).filter_by(youtubeId=youtube_id).one()
         except NoResultFound:
-            video = Video(youtube_id, permalink)
-            self.session.add(video)
+            v = Video(youtube_id, permalink)
+            self.db.add(v)
 
-        video.localPath = locate_video(self.dest_dir, video.youtubeId)
+        v.localPath = locate_video(self.dest_dir, v.youtubeId)
 
-        if video.localPath is None:
+        if v.localPath is None:
             template = P.join(self.dest_dir, "%(id)s.%(ext)s")
             args = ["youtube-dl", "--quiet", "--output",
-                    template, "--", video.youtubeId]
+                    template, "--", v.youtubeId]
             logging.debug("%s: %s", meth_name, " ".join(args))
             return_code = sub.call(args)
             logging.debug("%s: return_code: %d", meth_name, return_code)
-            if return_code != 0:
-                raise VideoUnavailableException(
-                    "download failed for video: %s" % video.youtubeId)
-            video.localPath = locate_video(self.dest_dir, video.youtubeId)
+            if return_code == 0:
+                logging.error("%s: youtube-dl exited with an error", meth_name)
+            v.localPath = locate_video(self.dest_dir, v.youtubeId)
 
-        assert video.localPath
-
-        video.state = State.DOWNLOADED
-        video.downloaded = dt.datetime.now()
-        video.localModified = dt.datetime.now()
-        return video
+        if v.localPath is None:
+            v.state = State.ERROR
+        else:
+            v.state = State.DOWNLOADED
+            v.downloaded = dt.datetime.now()
+            v.localModified = dt.datetime.now()
+        return v
 
     @transaction
     def check_stale(self):
         """Make all data that hasn't been updated in self.hold_hours
         hours stale."""
         cutoff = dt.datetime.now() - dt.timedelta(hours=self.hold_hours)
-        for mention in self.session.query(Mention).filter_by(
+        for mention in self.db.query(Mention).filter_by(
                 state=State.DOWNLOADED):
             if mention.discovered < cutoff:
                 mention.state = State.STALE
 
-        for video in self.session.query(Video):
+        for video in self.db.query(Video):
             if video.discovered < cutoff and video.state != State.REPOSTED:
                 video.state = State.STALE
                 video.localModified = dt.datetime.now()
 
     def purge(self):
         """Delete stale video data."""
-        for video in self.session.query(Video).filter_by(state=State.STALE):
+        for video in self.db.query(Video).filter_by(state=State.STALE):
             self.purge_video(video)
 
     @transaction
     def purge_video(self, video):
-        if P.isfile(video.localPath):
+        if video.has_file():
             logging.debug("removing %s", video.localPath)
             try:
                 os.remove(video.localPath)
@@ -374,23 +362,18 @@ class Bot(object):
         video.state = State.PURGED
         video.localModified = dt.datetime.now()
 
+    @transaction
     def repost_video(self, video):
-        """Repost the video to LiveLeak.
-        Raises Exceptions on failure.
-        Returns None."""
         meth_name = "repost_video"
         submission = self.r.get_submission(video.redditSubmissionPermalink)
         subreddit = submission.subreddit.display_name
         body = "repost of http://youtube.com/watch?v=%s from %s" % (
             video.youtubeId, submission.permalink)
         logging.info("%s: %s", meth_name, body)
-        if self.liveleak_dummy:
-            liveleak_id = "dummy"
-        else:
-            liveleak_id = self.uploader.upload(
+        if video.liveleakId is None:
+            video.liveleakId = self.uploader.upload(
                 video.localPath, submission.title, body, subreddit,
                 self.subreddits[subreddit]["liveleak_category"])
-        video.liveleakId = liveleak_id
         video.state = State.REPOSTED
 
     def check_replies(self, thing):
@@ -417,28 +400,24 @@ class Bot(object):
     def monitor_deleted_videos(self):
         """Go through all our downloaded videos and check if they have
         been deleted from YouTube.  If yes, repost them."""
-        for video in self.session.query(Video).filter_by(
-                state=State.DOWNLOADED):
-            if video_exists(self.google_developer_key, video.youtubeId):
+        for v in self.db.query(Video).filter_by(state=State.DOWNLOADED):
+            try:
+                if video_exists(self.google_developer_key, v.youtubeId):
+                    continue
+            except YoutubeException:
                 continue
-            submission = self.r.get_submission(video.redditSubmissionPermalink)
+
+            submission = self.r.get_submission(v.redditSubmissionPermalink)
             if self.check_replies(submission):
                 continue
 
-            try:
-                self.repost_deleted_video(video, submission)
-            except LiveLeakException as lle:
-                logging.exception(lle)
+            self.repost_video(v)
+            if v.liveleakId is None:
+                continue
 
-    @transaction
-    def repost_deleted_video(self, video, submission):
-        self.repost_video(video)
-        #
-        # Technically, there could be comments summoning the bot as well.
-        # Should we reply to them instead?
-        #
-        self.reply_success(submission, video.liveleakId)
-        video.deleted = dt.datetime.now()
+            self.reply_success(submission, v.liveleakId)
+            v.deleted = dt.datetime.now()
+            self.db.commit()
 
     @error_prone_praw_api_call
     def reply_success(self, thing, liveleak_id):

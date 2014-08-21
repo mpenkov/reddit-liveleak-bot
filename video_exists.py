@@ -8,17 +8,23 @@ logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
 
 
+class YoutubeException(Exception):
+    pass
+
+
 def video_exists(developer_key, youtube_id):
     meth_name = "video_exists"
     url = "https://www.googleapis.com/youtube/v3/videos"
     headers = {"User-Agent": USER_AGENT}
     params = {"key": developer_key, "part": "id", "id": youtube_id}
     r = requests.get(url, params=params, headers=headers)
-    logger.debug("%s: youtube_id: %s status_code: %d", meth_name, `youtube_id`, r.status_code)
+    logger.debug("%s: youtube_id: %s status_code: %d",
+                 meth_name, repr(youtube_id), r.status_code)
     if r.status_code != 200:
-        logger.error("%s: unexpected status_code: %d", meth_name, r.status_code)
-        logger.error("%s: GET response: %s", meth_name, `r.text`)
-    assert r.status_code == 200
+        logger.error("%s: unexpected status_code: %d",
+                     meth_name, r.status_code)
+        logger.error("%s: GET response: %s", meth_name, repr(r.text))
+        raise YoutubeException("bad HTTP response (%d)" % r.status_code)
     obj = json.loads(r.text)
     return obj["pageInfo"]["totalResults"] > 0
 
