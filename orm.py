@@ -12,6 +12,7 @@ class State(object):
     REPOSTED = 3
     STALE = 4
     ERROR = 5
+    PURGED = 6
 
 
 class Subreddit(Base):

@@ -1,9 +1,15 @@
 import unittest
 import os.path as P
 import yaml
+import mock
+import datetime as dt
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from orm import Base, Video, State, Mention
 
 from liveleak_upload import LiveLeakUploader
-from bot import extract_youtube_id, MENTION_REGEX, locate_video
+from bot import extract_youtube_id, MENTION_REGEX, locate_video, Bot
 from liveleak_upload import extract_multipart_params
 from video_exists import video_exists
 
@@ -149,3 +155,113 @@ class TestLocateVideo(unittest.TestCase):
     def test_negative(self):
         actual = locate_video(P.join(CURRENT_DIR, "test"), "not_there")
         self.assertEqual(None, actual)
+
+
+def empty_db():
+    engine = create_engine("sqlite:///")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    return Session()
+
+
+class TestCheckStale(unittest.TestCase):
+
+    def setUp(self):
+        self.bot = Bot()
+        self.bot.db = empty_db()
+
+        now = dt.datetime.now()
+        hours = self.bot.hold_hours
+
+        old_video = Video("old_video", "permalink1")
+        old_video.state = State.DOWNLOADED
+        old_video.discovered = now - dt.timedelta(hours=hours + 1)
+        old_mention = Mention("permalink1", "old_video", "repost")
+        old_mention.discovered = old_video.discovered
+
+        new_video = Video("new_video", "permalink2")
+        new_video.state = State.DOWNLOADED
+        new_mention = Mention("permalink2", "new_video", "repost")
+
+        reposted_video = Video("reposted_video", "permalink3")
+        reposted_video.state = State.REPOSTED
+        reposted_video.discovered = dt.datetime.min
+        reposted_mention = Mention("permalink3", "reposted_video", "repost")
+        reposted_mention.state = State.REPOSTED
+        reposted_mention.discovered = reposted_video.discovered
+
+        self.bot.db.add(old_video)
+        self.bot.db.add(old_mention)
+        self.bot.db.add(new_video)
+        self.bot.db.add(new_mention)
+        self.bot.db.add(reposted_video)
+        self.bot.db.add(reposted_mention)
+        self.bot.db.commit()
+
+    def test(self):
+        self.bot.check_stale()
+
+        old_video = self.bot.db.query(Video)\
+            .filter_by(youtubeId="old_video")\
+            .one()
+        self.assertEqual(old_video.state, State.STALE)
+        old_mention = self.bot.db.query(Mention)\
+            .filter_by(youtubeId="old_video")\
+            .one()
+        self.assertEqual(old_mention.state, State.STALE)
+
+        #
+        # Videos that are younger than the cutoff should not be marked as stale
+        #
+        new_video = self.bot.db.query(Video)\
+            .filter_by(youtubeId="new_video")\
+            .one()
+        self.assertEqual(new_video.state, State.DOWNLOADED)
+        new_mention = self.bot.db.query(Mention)\
+            .filter_by(youtubeId="new_video")\
+            .one()
+        self.assertEqual(new_mention.state, State.DOWNLOADED)
+
+        #
+        # Reposted videos/mentions should not be marked as stale
+        #
+        reposted_video = self.bot.db.query(Video)\
+            .filter_by(youtubeId="reposted_video")\
+            .one()
+        self.assertEqual(reposted_video.state, State.REPOSTED)
+        reposted_mention = self.bot.db.query(Mention)\
+            .filter_by(youtubeId="reposted_video")\
+            .one()
+        self.assertEqual(reposted_mention.state, State.REPOSTED)
+
+
+class TestPurgeVideo(unittest.TestCase):
+
+    def setUp(self):
+        self.bot = Bot()
+        self.bot.db = empty_db()
+        video = Video("to_be_deleted", "dummy_permalink")
+        video.state = State.STALE
+        video.localPath = "/path/to/video.mp4"
+        self.bot.db.add(video)
+        self.bot.db.commit()
+
+    def test_purge_video(self):
+        video = self.bot.db.query(Video)\
+            .filter_by(youtubeId="to_be_deleted")\
+            .one()
+        video.has_file = mock.Mock(return_value=True)
+
+        with mock.patch("os.remove") as mock_method:
+            self.bot.purge_video(video)
+
+        mock_method.assert_called_with("/path/to/video.mp4")
+        self.assertEquals(video.state, State.PURGED)
+
+    def test_purge(self):
+        video = self.bot.db.query(Video)\
+            .filter_by(youtubeId="to_be_deleted")\
+            .one()
+        with mock.patch.object(Bot, "purge_video") as mock_method:
+            self.bot.purge()
+        mock_method.assert_called_with(video)

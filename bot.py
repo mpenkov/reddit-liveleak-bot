@@ -336,7 +336,7 @@ class Bot(object):
         cutoff = dt.datetime.now() - dt.timedelta(hours=self.hold_hours)
         for mention in self.db.query(Mention).filter_by(
                 state=State.DOWNLOADED):
-            if mention.discovered < cutoff:
+            if mention.discovered < cutoff and mention.state != State.REPOSTED:
                 mention.state = State.STALE
 
         for video in self.db.query(Video):
