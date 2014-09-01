@@ -316,8 +316,9 @@ class Bot(object):
             logging.debug("%s: %s", meth_name, " ".join(args))
             return_code = sub.call(args)
             logging.debug("%s: return_code: %d", meth_name, return_code)
-            if return_code == 0:
-                logging.error("%s: youtube-dl exited with an error", meth_name)
+            if return_code != 0:
+                logging.error("%s: youtube-dl exited with an error (%d)",
+                              meth_name, return_code)
             v.localPath = locate_video(self.dest_dir, v.youtubeId)
 
         if v.localPath is None:
