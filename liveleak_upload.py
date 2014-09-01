@@ -69,9 +69,8 @@ class LiveLeakUploader(object):
         connection = extract_connection(r.text)
         logger.debug("%s: connection: %s", meth_name, connection)
 
-        connect_string = re.search(
-            "connect_string=(?P<connect_string>[^&]+)",
-            r.text).group("connect_string")
+        connect_string = re.search("connect_string=(?P<connect_string>[^&]+)",
+                                   r.text).group("connect_string")
         logger.debug("%s: connect_string: %s", meth_name, repr(connect_string))
 
         file_token = self.__aws_upload(path, multipart_params, connect_string)
@@ -174,7 +173,7 @@ class LiveLeakUploader(object):
 
         root = ET.fromstring(r.text)
         amazon_response = {}
-        for key in "Location Bucket Key ETag".split(" "):
+        for key in ["Location", "Bucket", "Key", "ETag"]:
             amazon_response[key] = root.find(key).text
 
         logger.debug(
