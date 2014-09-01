@@ -2,7 +2,7 @@ import praw
 from praw.errors import APIException
 import re
 import datetime as dt
-import subprocess as sub
+import subprocess
 import os
 import os.path as P
 import yaml
@@ -23,9 +23,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import NoResultFound
 
+import liveleak_upload
 from orm import Subreddit, Mention, Video
 from orm import State
-from liveleak_upload import LiveLeakUploader
 from user_agent import USER_AGENT
 from video_exists import video_exists, YoutubeException
 
@@ -134,7 +134,7 @@ class Bot(object):
         self.r = praw.Reddit(USER_AGENT)
         self.r.login(self.reddit_username, self.reddit_password)
 
-        self.uploader = LiveLeakUploader()
+        self.uploader = liveleak_upload.LiveLeakUploader()
         self.uploader.login(self.liveleak_username, self.liveleak_password)
 
     def monitor(self):
@@ -314,7 +314,7 @@ class Bot(object):
             args = ["youtube-dl", "--quiet", "--output",
                     template, "--", v.youtubeId]
             logging.debug("%s: %s", meth_name, " ".join(args))
-            return_code = sub.call(args)
+            return_code = subprocess.call(args)
             logging.debug("%s: return_code: %d", meth_name, return_code)
             if return_code != 0:
                 logging.error("%s: youtube-dl exited with an error (%d)",

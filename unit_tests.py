@@ -1,14 +1,14 @@
 import unittest
 import os.path as P
 import yaml
-import mock
 import datetime as dt
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from orm import Base, Video, State, Mention
+from mock import patch, Mock
 
-from liveleak_upload import LiveLeakUploader
+import liveleak_upload
 from bot import extract_youtube_id, MENTION_REGEX, locate_video, Bot
 from liveleak_upload import extract_multipart_params
 from video_exists import video_exists
@@ -98,7 +98,7 @@ class TestVideoExists(unittest.TestCase):
 class TestUpload(unittest.TestCase):
 
     def setUp(self):
-        self.up = LiveLeakUploader(True)
+        self.up = liveleak_upload.LiveLeakUploader(True)
 
         with open(P.join(CURRENT_DIR, "config.yml")) as fin:
             doc = yaml.load(fin)
@@ -167,7 +167,8 @@ def empty_db():
 class TestCheckStale(unittest.TestCase):
 
     def setUp(self):
-        self.bot = Bot()
+        with patch("praw.Reddit"), patch("liveleak_upload.LiveLeakUploader"):
+            self.bot = Bot()
         self.bot.db = empty_db()
 
         now = dt.datetime.now()
@@ -238,7 +239,8 @@ class TestCheckStale(unittest.TestCase):
 class TestPurgeVideo(unittest.TestCase):
 
     def setUp(self):
-        self.bot = Bot()
+        with patch("praw.Reddit"), patch("liveleak_upload.LiveLeakUploader"):
+            self.bot = Bot()
         self.bot.db = empty_db()
         video = Video("to_be_deleted", "dummy_permalink")
         video.state = State.STALE
@@ -250,9 +252,9 @@ class TestPurgeVideo(unittest.TestCase):
         video = self.bot.db.query(Video)\
             .filter_by(youtubeId="to_be_deleted")\
             .one()
-        video.has_file = mock.Mock(return_value=True)
+        video.has_file = Mock(return_value=True)
 
-        with mock.patch("os.remove") as mock_method:
+        with patch("os.remove") as mock_method:
             self.bot.purge_video(video)
 
         mock_method.assert_called_with("/path/to/video.mp4")
@@ -262,6 +264,43 @@ class TestPurgeVideo(unittest.TestCase):
         video = self.bot.db.query(Video)\
             .filter_by(youtubeId="to_be_deleted")\
             .one()
-        with mock.patch.object(Bot, "purge_video") as mock_method:
+        with patch.object(Bot, "purge_video") as mock_method:
             self.bot.purge()
         mock_method.assert_called_with(video)
+
+
+class TestDownloadVideo(unittest.TestCase):
+    def setUp(self):
+        with patch("praw.Reddit"), patch("liveleak_upload.LiveLeakUploader"):
+            self.bot = Bot()
+
+        self.bot.db = empty_db()
+        downloaded_video = Video("dl", "permalink1")
+        downloaded_video.localPath = "dl.mp4"
+
+    def test_already_downloaded(self):
+        with patch("subprocess.call", return_value=0) as sub_call,\
+                patch("bot.locate_video", return_value="dl.mp4") as locate:
+            v = self.bot.download_video("dl", "permalink1")
+        self.assertEquals(sub_call.called, False)
+        locate.assert_called_once_with(self.bot.dest_dir, "dl")
+        self.assertEquals(v.state, State.DOWNLOADED)
+
+    def test_new(self):
+        with patch("subprocess.call", return_value=0) as sub_call,\
+                patch("bot.locate_video") as locate:
+            locate.side_effect = [None, "dl.mp4"]
+            v = self.bot.download_video("dl", "permalink1")
+        self.assertEquals(sub_call.call_count, 1)
+        self.assertEquals(locate.call_count, 2)
+        self.assertEquals(v.state, State.DOWNLOADED)
+        self.assertEquals(v.localPath, "dl.mp4")
+
+    def test_error(self):
+        with patch("subprocess.call", return_value=-1) as sub_call,\
+                patch("bot.locate_video", return_value=None) as locate:
+            v = self.bot.download_video("dl", "permalink1")
+        sub_call.assert_called_once()
+        self.assertEquals(locate.call_count, 2)
+        self.assertEquals(v.localPath, None)
+        self.assertEquals(v.state, State.ERROR)
