@@ -40,15 +40,23 @@ class LiveLeakUploader(object):
         self.delete_after_upload = delete_after_upload
 
     def login(self, username, password):
+        meth_name = "login"
         data = {"user_name": username, "user_password": password, "login": 1}
         r = requests.post(
             "http://www.liveleak.com/index.php",
             data=data, headers={"User-Agent": USER_AGENT})
         if r.status_code != 200:
             raise LiveLeakException("bad HTTP response (%d)" % r.status_code)
-        self.cookies = {
-            "liveleak_user_token": r.cookies["liveleak_user_token"],
-            "liveleak_user_password": r.cookies["liveleak_user_password"]}
+
+        keys = ["PHPSESSID", "bblastactivity", "bblastvisit", "bbpassword",
+                "bbuserid", "liveleak_safe_mode", "liveleak_use_old_player",
+                "liveleak_user_password", "liveleak_user_token", "user-agent"]
+
+        self.cookies = {}
+        for key in keys:
+            self.cookies[key] = r.cookies[key]
+
+        logger.debug("%s: cookies: %s", meth_name, self.cookies)
 
     def upload(self, path, title, body, tags, category):
         meth_name = "upload"
