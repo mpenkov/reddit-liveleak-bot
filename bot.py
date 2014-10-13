@@ -336,11 +336,11 @@ class Bot(object):
         cutoff = dt.datetime.now() - dt.timedelta(hours=self.hold_hours)
         for mention in self.db.query(Mention).filter_by(
                 state=State.DOWNLOADED):
-            if mention.discovered < cutoff and mention.state != State.REPOSTED:
+            if mention.discovered < cutoff:
                 mention.state = State.STALE
 
-        for video in self.db.query(Video):
-            if video.discovered < cutoff and video.state != State.REPOSTED:
+        for video in self.db.query(Video).filter_by(state=State.DOWNLOADED):
+            if video.discovered is None or video.discovered < cutoff:
                 video.state = State.STALE
                 video.localModified = dt.datetime.now()
 
@@ -352,7 +352,7 @@ class Bot(object):
     @transaction
     def purge_video(self, video):
         if video.has_file():
-            logging.debug("removing %s", video.localPath)
+            logging.info("removing %s", video.localPath)
             try:
                 os.remove(video.localPath)
             except OSError as ose:
