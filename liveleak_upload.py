@@ -206,7 +206,11 @@ class LiveLeakUploader(object):
         logger.debug("%s: GET status_code: %d", meth_name, r.status_code)
         logger.debug("%s: GET response: %s", meth_name, repr(r.text))
 
-        obj = json.loads(r.text)
+        try:
+            obj = json.loads(r.text)
+        except ValueError:
+            raise LiveLeakException("unable to decode JSON from response")
+
         if obj["success"] != 1:
             raise LiveLeakException(obj["msg"])
 
