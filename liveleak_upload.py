@@ -10,6 +10,7 @@ import json
 import logging
 
 logger = logging.getLogger(__file__)
+logger.setLevel(logging.DEBUG)
 
 from StringIO import StringIO
 from lxml import etree

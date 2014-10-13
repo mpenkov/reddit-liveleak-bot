@@ -372,9 +372,10 @@ class Bot(object):
             video.youtubeId, submission.permalink)
         logging.info("%s: %s", meth_name, body)
         if video.liveleakId is None:
+            category = self.subreddits[subreddit]["liveleak_category"]
+            logging.debug("%s: category: %s", meth_name, category)
             video.liveleakId = self.uploader.upload(
-                video.localPath, submission.title, body, subreddit,
-                self.subreddits[subreddit]["liveleak_category"])
+                video.localPath, submission.title, body, subreddit, category)
         video.state = State.REPOSTED
 
     def check_replies(self, thing):
