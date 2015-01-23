@@ -49,8 +49,7 @@ class LiveLeakUploader(object):
         if r.status_code != 200:
             raise LiveLeakException("bad HTTP response (%d)" % r.status_code)
 
-        keys = ["PHPSESSID", "bblastactivity", "bblastvisit", "bbpassword",
-                "bbuserid", "liveleak_safe_mode", "liveleak_use_old_player",
+        keys = ["PHPSESSID", "liveleak_safe_mode", "liveleak_use_old_player",
                 "liveleak_user_password", "liveleak_user_token", "user-agent"]
 
         self.cookies = {}
