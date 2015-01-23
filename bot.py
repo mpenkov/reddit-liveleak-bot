@@ -175,8 +175,8 @@ class Bot(object):
                               new_submission.url)
                 continue
 
-            logging.info("%s: new video submission: %s %s", meth_name,
-                         new_submission.permalink, new_submission.url)
+            logging.debug("%s: new video submission: %s %s", meth_name,
+                          new_submission.permalink, new_submission.url)
 
             download = True
             try:
