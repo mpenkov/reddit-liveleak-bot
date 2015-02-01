@@ -348,6 +348,9 @@ class Bot(object):
         """Delete stale video data."""
         for video in self.db.query(Video).filter_by(state=State.STALE):
             self.purge_video(video)
+        for video in self.db.query(Video):
+            if not video.has_file():
+                self.purge_video(video)
 
     @transaction
     def purge_video(self, video):
