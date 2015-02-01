@@ -24,6 +24,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import NoResultFound
 
 import liveleak_upload
+import time
 from orm import Subreddit, Mention, Video
 from orm import State
 from user_agent import USER_AGENT
@@ -410,6 +411,7 @@ class Bot(object):
                 if video_exists(self.google_developer_key, v.youtubeId):
                     continue
             except YoutubeException:
+                time.sleep(5)
                 continue
 
             submission = self.r.get_submission(v.redditSubmissionPermalink)
