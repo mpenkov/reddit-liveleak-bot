@@ -9,6 +9,7 @@ import yaml
 import logging
 import requests
 import json
+import time
 
 #
 # http://blog.tplus1.com/blog/2007/09/28/the-python-logging-module-is-much-better-than-print-statements/
@@ -246,6 +247,9 @@ class Bot(object):
             self.purge_video(video)
         for video in self.db.query(Video).filter_by(state=Video.REPOSTED):
             self.purge_video(video)
+        for video in self.db.query(Video):
+            if not video.has_file():
+                self.purge_video(video)
 
     @transaction
     def purge_video(self, video):
@@ -306,6 +310,7 @@ class Bot(object):
                 if self.youtube_video_exists(v.youtubeId):
                     continue
             except YoutubeException:
+                time.sleep(5)
                 continue
 
             submission = self.r.get_submission(v.redditSubmissionPermalink)
