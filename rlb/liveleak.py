@@ -16,8 +16,6 @@ from StringIO import StringIO
 from lxml import etree
 from requests_toolbelt import MultipartEncoder
 
-from user_agent import USER_AGENT
-
 CATEGORIES = {
     "World News": 2, "Ukraine": 37, "Regional News": 3, "Other News": 4,
     "Politics": 5, "Syria": 33, "Afghanistan": 8, "Iraq": 7, "Iran": 9,
@@ -35,9 +33,10 @@ class LiveLeakException(Exception):
     pass
 
 
-class LiveLeakUploader(object):
-    def __init__(self, delete_after_upload=False):
+class Uploader(object):
+    def __init__(self, user_agent, delete_after_upload=False):
         self.cookies = None
+        self.user_agent = user_agent
         self.delete_after_upload = delete_after_upload
 
     def login(self, username, password):
@@ -45,7 +44,7 @@ class LiveLeakUploader(object):
         data = {"user_name": username, "user_password": password, "login": 1}
         r = requests.post(
             "http://www.liveleak.com/index.php",
-            data=data, headers={"User-Agent": USER_AGENT})
+            data=data, headers={"User-Agent": self.user_agent})
         if r.status_code != 200:
             raise LiveLeakException("bad HTTP response (%d)" % r.status_code)
 
@@ -62,7 +61,7 @@ class LiveLeakUploader(object):
         meth_name = "upload"
         r = requests.get(
             "http://www.liveleak.com/item?a=add_item",
-            cookies=self.cookies, headers={"User-Agent": USER_AGENT})
+            cookies=self.cookies, headers={"User-Agent": self.user_agent})
         logger.debug(
             "%s: add_item GET status_code: %d", meth_name, r.status_code)
         if r.status_code != 200:
@@ -110,7 +109,7 @@ class LiveLeakUploader(object):
         r = requests.post(
             "http://www.liveleak.com/item?a=add_item&ajax=1",
             data=data, cookies=self.cookies,
-            headers={"User-Agent": USER_AGENT})
+            headers={"User-Agent": self.user_agent})
         logger.debug(
             "%s: add_item POST status_code: %d", meth_name, r.status_code)
         logger.debug("%s: add_item POST response: %s", meth_name, repr(r.text))
@@ -164,7 +163,7 @@ class LiveLeakUploader(object):
             "Accept-Encoding": "gzip,deflate,sdch",
             "Host": "llbucs.s3.amazonaws.com",
             "Accept-Language": "en-US,en;q=0.8,ja;q=0.6,ru;q=0.4",
-            "User-Agent": USER_AGENT,
+            "User-Agent": self.user_agent,
             "Content-Type": m.content_type,
             "Accept": "*/*",
             "Referer": "http://www.liveleak.com/item?a=add_item",
@@ -201,7 +200,7 @@ class LiveLeakUploader(object):
         r = requests.get(
             "http://www.liveleak.com/file",
             params=query_params, cookies=self.cookies,
-            headers={"User-Agent": USER_AGENT})
+            headers={"User-Agent": self.user_agent})
         logger.debug("%s: GET status_code: %d", meth_name, r.status_code)
         logger.debug("%s: GET response: %s", meth_name, repr(r.text))
 
@@ -220,7 +219,7 @@ class LiveLeakUploader(object):
         r = requests.get(
             "http://www.liveleak.com/file",
             params={"a": "delete_file", "file_token": file_token},
-            cookies=self.cookies, headers={"User-Agent": USER_AGENT})
+            cookies=self.cookies, headers={"User-Agent": self.user_agent})
         logger.debug("%s: GET status_code: %d", meth_name, r.status_code)
         # logger.debug("%s: GET response: %s", meth_name, repr(r.text))
 
@@ -262,53 +261,3 @@ def extract_connection(html):
     root = etree.parse(StringIO(html), etree.HTMLParser())
     connection = root.xpath("//input[@id='connection']")
     return connection[0].get("value")
-
-
-def create_parser():
-    from optparse import OptionParser
-    p = OptionParser("usage: %prog [options] video.mp4")
-    p.add_option("-D", "--delete", dest="delete", action="store_true",
-                 default=False, help="Delete file after upload, don't publish")
-    p.add_option("-t", "--title", dest="title", type="string",
-                 default="this is a test", help="Specify the title")
-    p.add_option("-b", "--body", dest="body", type="string",
-                 default="this is a test", help="Specify the body")
-    p.add_option("-T", "--tags", dest="tags", type="string",
-                 default="test", help="Specify the tags")
-    p.add_option("-u", "--username", dest="username", type="string",
-                 default=None, help="Specify the username")
-    p.add_option("-p", "--password", dest="password", type="string",
-                 default=None, help="Specify the password")
-    p.add_option("-c", "--category", dest="category", type="string",
-                 default="Other", help="Specify the category for the video")
-    return p
-
-
-def main():
-    parser = create_parser()
-    opts, args = parser.parse_args()
-    if len(args) != 1:
-        parser.error("invalid number of arguments")
-
-    logging.basicConfig(level=logging.INFO)
-    logger.setLevel(logging.DEBUG)
-
-    username = opts.username
-    if not username:
-        username = raw_input("username: ")
-
-    password = opts.password
-    if not password:
-        import getpass
-        password = getpass.getpass("password: ")
-
-    uploader = LiveLeakUploader(opts.delete)
-    uploader.login(username, password)
-
-    path = args[0]
-    if opts.category not in CATEGORIES:
-        parser.error("invalid category: %s" % repr(opts.category))
-    uploader.upload(path, opts.title, opts.body, opts.tags, opts.category)
-
-if __name__ == "__main__":
-    main()

@@ -1,18 +1,16 @@
 ---
+user_agent: "Mirror YouTube videos to LiveLeak by u/mishapenkov v 2.0\nURL: https://github.com/mpenkov/reddit-liveleak-bot"
 dbpath: sqlite:////Users/misha/git/reddit-liveleak-bot/db.sqlite3
 videopath: /path/to/videos/subdir
 liveleak:
     username: your_username
     password: your_password
-    dummy: false                        # If set to true, won't actually post anything to LiveLeak. For testing only.
 reddit:
     username: your_username
     password: your_password
-ups_threshold: 2                        # The minimum score for a comment in order to consider reposting
 hold_hours: 72                          # The number of hours to hold videos before purging
 subreddits:
     UkrainianConflict:
-        download_all: true              # Download all new submissions as they are posted
         liveleak_category: Ukraine      # The LiveLeak category to use for reposted videos
 limit: 100                              # The number of submissions to fetch at any one time
 google_developer_key: your_key_here     # Get it from https://console.developers.google.com

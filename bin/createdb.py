@@ -1,12 +1,14 @@
-"""Create an empty SQLite database."""
+"""Create an empty SQLite database with the right schema."""
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from orm import Base
+from rlb.orm import Base
+
 
 def create_parser():
     from optparse import OptionParser
     p = OptionParser("usage: %prog db.sqlite3")
     return p
+
 
 def main():
     p = create_parser()
@@ -14,7 +16,7 @@ def main():
     if len(args) != 1:
         p.error("invalid number of arguments")
     fname = args[0]
-    answer = raw_input("This will reset the database %s. Are you sure? " % fname)
+    answer = raw_input("I will reset the database %s. Are you sure? " % fname)
     if answer != "yes":
         print "Aborting."
         return
