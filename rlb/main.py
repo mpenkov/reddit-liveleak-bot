@@ -171,7 +171,7 @@ class Bot(object):
                 break
 
             youtube_id = extract_youtube_id(new_submission.url)
-            logger.info("%s: youtube_id: %s", meth_name, youtube_id)
+            logger.debug("%s: youtube_id: %s", meth_name, youtube_id)
             if youtube_id is None:
                 logger.debug("skipping submission URL: %s",
                              new_submission.url)
