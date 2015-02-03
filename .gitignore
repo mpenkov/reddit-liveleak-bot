@@ -2,3 +2,9 @@
 *.swp
 praw.ini
 config.yml
+.DS_Store
+.coverage
+cover
+gitignore
+videos
+*.sqlite3
