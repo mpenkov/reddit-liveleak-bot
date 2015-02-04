@@ -121,7 +121,7 @@ class Bot(object):
 
     def monitor(self):
         """Monitor all subreddits specified in the config.xml file."""
-        for subreddit in self.subreddits:
+        for subreddit in self.cfg.subreddits:
             self.download_new_videos(subreddit)
         self.monitor_deleted_videos()
 

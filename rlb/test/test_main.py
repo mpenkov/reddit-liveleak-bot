@@ -284,3 +284,6 @@ class TestBot(unittest.TestCase):
                                    "author": self.bot.cfg.reddit_username,
                                    "name": "dummy"}))
         self.assertEquals(self.bot.check_replies(submission), True)
+
+    def test_monitor(self):
+        self.bot.monitor()
