@@ -1,4 +1,5 @@
 import unittest
+import nose.tools
 import os.path as P
 
 import rlb.main
@@ -19,6 +20,15 @@ class TestUpload(unittest.TestCase):
     def test_upload(self):
         file_token, _ = self.up.upload(self.path)
         self.up.delete(file_token)
+
+    #
+    # We don't include this in the test suite because it wastes our upload
+    # quota.
+    #
+    @nose.tools.nottest
+    def test_publish(self):
+        _, connection = self.up.upload(self.path)
+        self.up.publish("test", "test", "test", "Other", connection)
 
     #
     # TODO: test upload for bad category name
