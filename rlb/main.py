@@ -1,14 +1,10 @@
 import praw
 from praw.errors import APIException
-import re
 import datetime as dt
-import subprocess
 import os
 import os.path as P
 import yaml
 import logging
-import requests
-import json
 import time
 
 #
@@ -28,17 +24,16 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import NoResultFound
 
 import liveleak
+import youtube
 from orm import Subreddit, Video
 
 COMMENT_MIRROR = "[**Mirror**](http://www.liveleak.com/view?i=%s)"
-COMMENT_ERROR = "**Error:** %s"
 COMMENT_FOOTER = """
 
 ---
 
 ^| [^Feedback](http://www.reddit.com/r/redditliveleakbot/)
 ^| [^FAQ](http://www.reddit.com/r/redditliveleakbot/wiki/index) ^|"""
-BOT_USERNAME = "redditliveleakbot"
 
 
 def transaction(func):
@@ -79,48 +74,18 @@ def locate_video(subdir, video_id):
             return P.join(subdir, f)
 
 
-def extract_youtube_id(url):
-    """Extract a YouTube ID from a URL."""
-    #
-    # YouTube attribution links.
-    # More info:
-    # http://techcrunch.com/2011/06/01/youtube-now-lets-you-license-videos-under-creative-commons-remixers-rejoice/
-    # Example:
-    # http://www.youtube.com/attribution_link?a=P3m5pZfhr5Y&u=%2Fwatch%3Fv%3DHnc-1rXLx_4%26feature%3Dshare
-    m = re.search("watch%3Fv%3D(?P<id>[a-zA-Z0-9-_]{11})", url)
-    if m:
-        return m.group("id")
-
-    #
-    # Regular YouTube links.
-    #
-    m = re.search(r"youtu\.?be.*(v=|/)(?P<id>[a-zA-Z0-9-_]{11})", url)
-    if m:
-        return m.group("id")
-    return None
-
-
-class YoutubeException(Exception):
-    pass
-
-
-class Bot(object):
+class Config(object):
 
     def __init__(self, config_path=None):
         if config_path is None:
             config_path = P.join(P.dirname(P.abspath(__file__)),
                                  "conf/config.yml")
+
         with open(config_path) as fin:
             doc = yaml.load(fin)
+
         self.limit = int(doc["limit"])
         self.dest_dir = doc["videopath"]
-
-        if not P.isdir(self.dest_dir):
-            os.makedirs(self.dest_dir)
-
-        #
-        # TODO: check the correctness of the config file
-        #
         self.user_agent = doc["user_agent"]
         self.liveleak_username = doc["liveleak"]["username"]
         self.liveleak_password = doc["liveleak"]["password"]
@@ -129,17 +94,30 @@ class Bot(object):
         self.google_developer_key = doc["google_developer_key"]
 
         self.hold_hours = doc["hold_hours"]
-        self.subreddits = doc["subreddits"]
+        self.category = {}
+        for sub in doc["subreddits"]:
+            self.category[sub] = doc["subreddits"][sub]["liveleak_category"]
+        self.dbpath = doc["dbpath"]
 
-        engine = create_engine(doc["dbpath"])
+
+class Bot(object):
+
+    def __init__(self, config_path=None):
+
+        self.cfg = Config(config_path)
+        if not P.isdir(self.cfg.dest_dir):
+            os.makedirs(self.cfg.dest_dir)
+
+        engine = create_engine(self.cfg.dbpath)
         Session = sessionmaker(bind=engine)
         self.db = Session()
 
-        self.r = praw.Reddit(self.user_agent)
-        self.r.login(self.reddit_username, self.reddit_password)
+        self.r = praw.Reddit(self.cfg.user_agent)
+        self.r.login(self.cfg.reddit_username, self.cfg.reddit_password)
 
-        self.uploader = liveleak.Uploader(self.user_agent)
-        self.uploader.login(self.liveleak_username, self.liveleak_password)
+        self.uploader = liveleak.Uploader(self.cfg.user_agent)
+        self.uploader.login(self.cfg.liveleak_username,
+                            self.cfg.liveleak_password)
 
     def monitor(self):
         """Monitor all subreddits specified in the config.xml file."""
@@ -165,12 +143,12 @@ class Bot(object):
         now = dt.datetime.now()
 
         for new_submission in self.r.get_subreddit(
-                subreddit).get_new(limit=self.limit):
+                subreddit).get_new(limit=self.cfg.limit):
             created = dt.datetime.fromtimestamp(new_submission.created_utc)
             if created < sub_info.mostRecentSubmission:
                 break
 
-            youtube_id = extract_youtube_id(new_submission.url)
+            youtube_id = youtube.extract_id(new_submission.url)
             logger.debug("%s: youtube_id: %s", meth_name, youtube_id)
             if youtube_id is None:
                 logger.debug("skipping submission URL: %s",
@@ -199,29 +177,17 @@ class Bot(object):
         If it has already been downloaded, the actual download is skipped.
         Returns a Video instance.
         """
-        meth_name = "download_video"
         try:
             v = self.db.query(Video).filter_by(youtubeId=youtube_id).one()
         except NoResultFound:
             v = Video(youtube_id, permalink)
             self.db.add(v)
 
-        v.localPath = locate_video(self.dest_dir, v.youtubeId)
+        v.localPath = locate_video(self.cfg.dest_dir, v.youtubeId)
 
         if v.localPath is None:
-            #
-            # TODO: verbose output on youtube-dl non-zero exit
-            #
-            template = P.join(self.dest_dir, "%(id)s.%(ext)s")
-            args = ["youtube-dl", "--quiet", "--output",
-                    template, "--", v.youtubeId]
-            logger.debug("%s: %s", meth_name, " ".join(args))
-            return_code = subprocess.call(args)
-            logger.debug("%s: return_code: %d", meth_name, return_code)
-            if return_code != 0:
-                logger.error("%s: youtube-dl exited with an error (%d)",
-                             meth_name, return_code)
-            v.localPath = locate_video(self.dest_dir, v.youtubeId)
+            youtube.download(self.cfg.dest_dir, v.youtubeId)
+            v.localPath = locate_video(self.cfg.dest_dir, v.youtubeId)
 
         if v.localPath is None:
             v.state = Video.ERROR
@@ -235,7 +201,7 @@ class Bot(object):
     def make_stale(self):
         """Make all data that hasn't been updated in self.hold_hours
         hours stale."""
-        cutoff = dt.datetime.now() - dt.timedelta(hours=self.hold_hours)
+        cutoff = dt.datetime.now() - dt.timedelta(hours=self.cfg.hold_hours)
         for video in self.db.query(Video).filter_by(state=Video.DOWNLOADED):
             if video.discovered is None or video.discovered < cutoff:
                 video.state = Video.STALE
@@ -281,14 +247,17 @@ class Bot(object):
             logger.info("%s: giving up on %s", meth_name, video.youtubeId)
             video.state = Video.STALE
         elif video.liveleakId is None:
-            category = self.subreddits[subreddit]["liveleak_category"]
+            category = self.cfg.category[subreddit]
             logger.debug("%s: category: %s", meth_name, category)
-            video.liveleakId = self.uploader.upload(
-                video.localPath, submission.title, body, subreddit, category)
+
+            file_token, connection = self.uploader.upload(video.localPath)
+            video.liveleakId = self.uploader.publish(submission.title, body,
+                                                     subreddit, category,
+                                                     connection)
             video.state = Video.REPOSTED
 
     def check_replies(self, submission):
-        """Return true if we've replied to the submission/comment already.
+        """Return true if we've replied to the submission already.
 
         Ideally, we shouldn't have to check for this over the wire, since
         our database should be sufficient.  However, it avoids embarrassing
@@ -296,9 +265,9 @@ class Bot(object):
         meth_name = "check_replies"
         reply_authors = [r.author.name for r in submission.comments
                          if r.author]
-        result = "redditliveleakbot" in reply_authors
+        result = self.cfg.reddit_username in reply_authors
         if result:
-            logger.info("%s: we have already replied to this thing: %s",
+            logger.info("%s: we have already replied to this submission: %s",
                         meth_name, submission.permalink)
         return result
 
@@ -307,9 +276,10 @@ class Bot(object):
         been deleted from YouTube.  If yes, repost them."""
         for v in self.db.query(Video).filter_by(state=Video.DOWNLOADED):
             try:
-                if self.youtube_video_exists(v.youtubeId):
+                if youtube.video_exists(v.youtubeId, self.cfg.user_agent,
+                                        self.cfg.google_developer_key):
                     continue
-            except YoutubeException:
+            except youtube.YoutubeException:
                 time.sleep(5)
                 continue
 
@@ -329,21 +299,3 @@ class Bot(object):
     def post_comment(self, submission, liveleak_id):
         comment = (COMMENT_MIRROR % liveleak_id) + COMMENT_FOOTER
         submission.add_comment(comment)
-
-    def youtube_video_exists(self, youtube_id):
-        """Return True if the video is still accessible on YouTube."""
-        meth_name = "youtube_video_exists"
-        url = "https://www.googleapis.com/youtube/v3/videos"
-        headers = {"User-Agent": self.user_agent}
-        params = {"key": self.google_developer_key, "part": "id",
-                  "id": youtube_id}
-        r = requests.get(url, params=params, headers=headers)
-        logger.debug("%s: youtube_id: %s status_code: %d",
-                     meth_name, repr(youtube_id), r.status_code)
-        if r.status_code != 200:
-            logger.error("%s: unexpected status_code: %d",
-                         meth_name, r.status_code)
-            logger.error("%s: GET response: %s", meth_name, repr(r.text))
-            raise YoutubeException("bad HTTP response (%d)" % r.status_code)
-        obj = json.loads(r.text)
-        return obj["pageInfo"]["totalResults"] > 0

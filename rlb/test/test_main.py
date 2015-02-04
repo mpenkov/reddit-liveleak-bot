@@ -1,6 +1,5 @@
 import unittest
 import os.path as P
-import yaml
 import datetime as dt
 import json
 
@@ -10,119 +9,21 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from mock import patch, Mock
 
-import rlb.liveleak
-from rlb.main import extract_youtube_id, locate_video, Bot, BOT_USERNAME
+import rlb.main
 from rlb.orm import Base, Video, Subreddit
 
 CURRENT_DIR = P.dirname(P.abspath(__file__))
 
 
-class TestExtractYouTubeId(unittest.TestCase):
-
-    def test_positive(self):
-        url = "https://www.youtube.com/watch?v=IU5NSSzYygk"
-        self.assertEquals(extract_youtube_id(url), "IU5NSSzYygk")
-
-    def test_querystring(self):
-        url = "https://www.youtube.com/watch?v=V5E8kDo2n6g&amp;\
-feature=youtu.be"
-        self.assertEquals(extract_youtube_id(url), "V5E8kDo2n6g")
-
-    def test_long(self):
-        url = "http://www.youtube.com/watch?feature=player_embedded&amp;\
-v=LEN5rn47gYQ"
-        self.assertEquals(extract_youtube_id(url), "LEN5rn47gYQ")
-
-    def test_underscore(self):
-        url = "https://www.youtube.com/watch?v=-8_0eAME3Xw"
-        self.assertEquals(extract_youtube_id(url), "-8_0eAME3Xw")
-
-    def test_hyphen(self):
-        url = "http://www.youtube.com/watch?v=N-gPAMeXlQk"
-        self.assertEquals(extract_youtube_id(url), "N-gPAMeXlQk")
-
-    def test_short(self):
-        url = "http://youtu.be/co9IZOSssFw"
-        self.assertEquals(extract_youtube_id(url), "co9IZOSssFw")
-
-    def test_short2(self):
-        url = "http://youtu.be/Cy0RPWK_5wg"
-        self.assertEquals(extract_youtube_id(url), "Cy0RPWK_5wg")
-
-    def test_negative(self):
-        url = "http://i.imgur.com/KJ0h3nZ.png"
-        self.assertEquals(extract_youtube_id(url), None)
-
-    def test_negative2(self):
-        url = "https://twitter.com/Praporec/status/489524665723809792/photo/1"
-        self.assertEquals(extract_youtube_id(url), None)
-
-    def test_attribution(self):
-        url = "http://www.youtube.com/attribution_link?\
-a=P3m5pZfhr5Y&u=%2Fwatch%3Fv%3DHnc-1rXLx_4%26feature%3Dshare"
-        self.assertEquals(extract_youtube_id(url), "Hnc-1rXLx_4")
-
-
-class TestUpload(unittest.TestCase):
-
-    def setUp(self):
-        #
-        # This needs to be a file with working LiveLeak credentials
-        #
-        with open(P.join(CURRENT_DIR, "../conf/config.yml")) as fin:
-            doc = yaml.load(fin)
-        self.up = rlb.liveleak.Uploader(doc["user_agent"], True)
-        self.up.login(doc["liveleak"]["username"], doc["liveleak"]["password"])
-        self.path = P.join(CURRENT_DIR, "foreman_cif.mp4")
-        self.assertTrue(P.isfile(self.path))
-
-    def test_upload(self):
-        self.up.upload(self.path, "test", "test", "test", "Other")
-
-    #
-    # TODO: test upload for bad category name
-    #
-
-
-class TestMultipartParams(unittest.TestCase):
-
-    def test_parse(self):
-        path = P.join(CURRENT_DIR, "add_item.html")
-        with open(path) as fin:
-            html = fin.read()
-        p = rlb.liveleak.extract_multipart_params(html)
-        self.assertEqual(
-            p["key"],
-            "2014/Jul/16/LiveLeak-dot-com-2f3_1405564338-${filename}")
-        self.assertEqual(
-            p["Filename"],
-            "LiveLeak-dot-com-2f3_1405564338-${filename}")
-        self.assertEqual(p["acl"], "private")
-        self.assertEqual(p["Expires"], "Thu, 01 Jan 2037 16:00:00 GMT")
-        self.assertEqual(p["Content-Type"], " ")
-        self.assertEqual(p["success_action_status"], "201")
-        self.assertEqual(p["AWSAccessKeyId"], "AKIAIWBZFTE3KNSLSTTQ")
-        self.assertEqual(
-            p["policy"],
-            "eyJleHBpcmF0aW9uIjoiMjAxNC0wNy0xN1QyMjozMjoxOC4wMDBaIiwiY29uZGl0\
-aW9ucyI6W3siYnVja2V0IjoibGxidWNzIn0seyJhY2wiOiJwcml2YXRlIn0seyJFeHBpcmVzIjoiV\
-Gh1LCAwMSBKYW4gMjAzNyAxNjowMDowMCBHTVQifSxbInN0YXJ0cy13aXRoIiwiJGtleSIsIjIwMT\
-RcL0p1bFwvMTZcL0xpdmVMZWFrLWRvdC1jb20tMmYzXzE0MDU1NjQzMzgiXSxbInN0YXJ0cy13aXR\
-oIiwiJENvbnRlbnQtVHlwZSIsIiJdLFsiY29udGVudC1sZW5ndGgtcmFuZ2UiLDAsIjIwOTcxNTIw\
-MDAiXSx7InN1Y2Nlc3NfYWN0aW9uX3N0YXR1cyI6IjIwMSJ9LFsic3RhcnRzLXdpdGgiLCIkbmFtZ\
-SIsIiJdLFsic3RhcnRzLXdpdGgiLCIkRmlsZW5hbWUiLCIiXV19")
-        self.assertEqual(p["signature"], "VufnGKzbNncIeL0AMZ7nWi55FTo=")
-
-
 class TestLocateVideo(unittest.TestCase):
 
     def test_positive(self):
-        actual = locate_video(CURRENT_DIR, "foreman_cif")
+        actual = rlb.main.locate_video(CURRENT_DIR, "foreman_cif")
         expected = P.join(CURRENT_DIR, "foreman_cif.mp4")
         self.assertEqual(expected, actual)
 
     def test_negative(self):
-        actual = locate_video(CURRENT_DIR, "not_there")
+        actual = rlb.main.locate_video(CURRENT_DIR, "not_there")
         self.assertEqual(None, actual)
 
 
@@ -138,11 +39,11 @@ class TestMakeStale(unittest.TestCase):
     @patch("rlb.liveleak.Uploader")
     @patch("praw.Reddit")
     def setUp(self, mock_reddit, mock_llu):
-        self.bot = Bot()
+        self.bot = rlb.main.Bot()
         self.bot.db = empty_db()
 
         now = dt.datetime.now()
-        hours = self.bot.hold_hours
+        hours = self.bot.cfg.hold_hours
 
         old_video = Video("old_video", "permalink1")
         old_video.state = Video.DOWNLOADED
@@ -190,7 +91,7 @@ class TestPurgeVideo(unittest.TestCase):
     @patch("rlb.liveleak.Uploader")
     @patch("praw.Reddit")
     def setUp(self, mock_reddit, mock_uploader):
-        self.bot = Bot()
+        self.bot = rlb.main.Bot()
         self.bot.db = empty_db()
         video = Video("to_be_deleted", "dummy_permalink")
         video.state = Video.STALE
@@ -214,7 +115,7 @@ class TestPurgeVideo(unittest.TestCase):
         video = self.bot.db.query(Video)\
             .filter_by(youtubeId="to_be_deleted")\
             .one()
-        with patch.object(Bot, "purge_video") as mock_method:
+        with patch.object(rlb.main.Bot, "purge_video") as mock_method:
             self.bot.purge()
             mock_method.assert_called_with(video)
 
@@ -224,7 +125,7 @@ class TestDownloadVideo(unittest.TestCase):
     @patch("rlb.liveleak.Uploader")
     @patch("praw.Reddit")
     def setUp(self, mock_reddit, mock_uploader):
-        self.bot = Bot()
+        self.bot = rlb.main.Bot()
 
         self.bot.db = empty_db()
         downloaded_video = Video("dl", "permalink1")
@@ -239,7 +140,7 @@ class TestDownloadVideo(unittest.TestCase):
         v = self.bot.download_video("dl", "permalink1")
 
         self.assertEquals(mock_call.called, False)
-        mock_locate_video.assert_called_once_with(self.bot.dest_dir, "dl")
+        mock_locate_video.assert_called_once_with(self.bot.cfg.dest_dir, "dl")
         self.assertEquals(v.state, Video.DOWNLOADED)
 
     @patch("rlb.main.locate_video")
@@ -275,7 +176,8 @@ class TestBot(unittest.TestCase):
     @patch("rlb.liveleak.Uploader")
     @patch("praw.Reddit")
     def setUp(self, mock_reddit, mock_llu, mock_makedirs):
-        self.bot = Bot(P.join(CURRENT_DIR, "../conf/config.yml.sample"))
+        self.bot = rlb.main.Bot(P.join(CURRENT_DIR,
+                                       "../conf/config.yml.sample"))
 
         self.bot.db = empty_db()
 
@@ -324,12 +226,12 @@ class TestBot(unittest.TestCase):
     @patch("rlb.liveleak.Uploader")
     @patch("praw.Reddit")
     def test_constructor(self, mock_reddit, mock_llu, mock_makedirs):
-        bot = Bot(P.join(CURRENT_DIR, "../conf/config.yml.sample"))
+        bot = rlb.main.Bot(P.join(CURRENT_DIR, "../conf/config.yml.sample"))
         mock_makedirs.assert_called_once_with("/path/to/videos/subdir")
         bot.r.login.assert_called_once()
         bot.uploader.login.assert_called_once()
 
-    @patch("rlb.main.extract_youtube_id")
+    @patch("rlb.youtube.extract_id")
     def test_download_new_videos(self, mock_eyid):
         num_submissions = len(self.subreddit.get_new())
         mock_eyid.return_value = "dQw4w9WgXcQ"
@@ -378,20 +280,6 @@ class TestBot(unittest.TestCase):
         submission.comments = self.mock_comments()
         submission.comments.append(praw.objects.Comment(
             self.bot.r, json_dict={"_replies": [],
-                                   "author": BOT_USERNAME,
+                                   "author": self.bot.cfg.reddit_username,
                                    "name": "dummy"}))
         self.assertEquals(self.bot.check_replies(submission), True)
-
-
-class TestVideoExists(unittest.TestCase):
-
-    def setUp(self):
-        self.bot = Bot()
-
-    def test_positive(self):
-        video_id = "jNQXAC9IVRw"
-        self.assertTrue(self.bot.youtube_video_exists(video_id))
-
-    def test_negative(self):
-        video_id = "Y7UmFIpenjs"
-        self.assertFalse(self.bot.youtube_video_exists(video_id))

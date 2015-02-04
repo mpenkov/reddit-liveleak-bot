@@ -34,10 +34,9 @@ class LiveLeakException(Exception):
 
 
 class Uploader(object):
-    def __init__(self, user_agent, delete_after_upload=False):
+    def __init__(self, user_agent):
         self.cookies = None
         self.user_agent = user_agent
-        self.delete_after_upload = delete_after_upload
 
     def login(self, username, password):
         meth_name = "login"
@@ -57,7 +56,7 @@ class Uploader(object):
 
         logger.debug("%s: cookies: %s", meth_name, self.cookies)
 
-    def upload(self, path, title, body, tags, category):
+    def upload(self, path):
         meth_name = "upload"
         r = requests.get(
             "http://www.liveleak.com/item?a=add_item",
@@ -81,13 +80,10 @@ class Uploader(object):
         logger.debug("%s: connect_string: %s", meth_name, repr(connect_string))
 
         file_token = self.__aws_upload(path, multipart_params, connect_string)
-        if self.delete_after_upload:
-            self.__delete(file_token)
-            return None
+        return file_token, connection
 
-        #
-        # Publish the item
-        #
+    def publish(self, title, body, tags, category, connection):
+        meth_name = "publish"
         data = {
             "title": title,
             "body_text": body,
@@ -119,6 +115,15 @@ class Uploader(object):
             raise Exception(obj["msg"])
 
         return obj["item_token"]
+
+    def delete(self, file_token):
+        meth_name = "delete"
+        r = requests.get(
+            "http://www.liveleak.com/file",
+            params={"a": "delete_file", "file_token": file_token},
+            cookies=self.cookies, headers={"User-Agent": self.user_agent})
+        logger.debug("%s: GET status_code: %d", meth_name, r.status_code)
+        # logger.debug("%s: GET response: %s", meth_name, repr(r.text))
 
     def __aws_upload(self, path, multipart_params, connect_string):
         """Upload a file to AWS.
@@ -213,15 +218,6 @@ class Uploader(object):
             raise LiveLeakException(obj["msg"])
 
         return obj["file_token"]
-
-    def __delete(self, file_token):
-        meth_name = "__delete"
-        r = requests.get(
-            "http://www.liveleak.com/file",
-            params={"a": "delete_file", "file_token": file_token},
-            cookies=self.cookies, headers={"User-Agent": self.user_agent})
-        logger.debug("%s: GET status_code: %d", meth_name, r.status_code)
-        # logger.debug("%s: GET response: %s", meth_name, repr(r.text))
 
 
 def extract_multipart_params(html):
