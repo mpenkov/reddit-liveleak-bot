@@ -94,9 +94,9 @@ class Config(object):
         self.google_developer_key = doc["google_developer_key"]
 
         self.hold_hours = doc["hold_hours"]
-        self.category = {}
+        self.subreddits = {}
         for sub in doc["subreddits"]:
-            self.category[sub] = doc["subreddits"][sub]["liveleak_category"]
+            self.subreddits[sub] = doc["subreddits"][sub]["liveleak_category"]
         self.dbpath = doc["dbpath"]
 
 
@@ -247,7 +247,7 @@ class Bot(object):
             logger.info("%s: giving up on %s", meth_name, video.youtubeId)
             video.state = Video.STALE
         elif video.liveleakId is None:
-            category = self.cfg.category[subreddit]
+            category = self.cfg.subreddits[subreddit]
             logger.debug("%s: category: %s", meth_name, category)
 
             file_token, connection = self.uploader.upload(video.localPath)

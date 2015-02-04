@@ -194,7 +194,8 @@ class TestBot(unittest.TestCase):
         self.bot.db.add(info)
         self.bot.db.commit()
 
-        self.bot.uploader.upload.return_value = "dummy_liveleak_id"
+        self.bot.uploader.upload.return_value = "dummy_token", "dummy_conn"
+        self.bot.uploader.publish.return_value = "dummy_liveleak_id"
 
     @patch("praw.objects.Subreddit")
     def mock_subreddit(self, name, mock_subreddit):
