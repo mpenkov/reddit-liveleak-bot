@@ -24,10 +24,6 @@ def main():
     bot = Bot(options.config)
     if action == "monitor":
         bot.monitor()
-    elif action == "deleted":
-        bot.monitor_deleted_videos()
-    elif action == "check_stale":
-        bot.check_stale()
     elif action == "purge":
         bot.purge()
     else:

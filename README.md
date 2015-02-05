@@ -58,7 +58,7 @@ In purge mode, the bot deletes videos that have been in the database for a speci
 
 Note that the bot will not keep running after it completes its particular task.
 To have it run periodically, use something like [cron](http://en.wikipedia.org/wiki/Cron).
-For cron, the following lines will run the bot every hour:
+For cron, the following line will monitor every hour and purge every week, respectively:
 
-    0 * * * * /home/misha/git/reddit-liveleak-bot/bin/bot.sh monitor
-    55 * * * * /home/misha/git/reddit-liveleak-bot/bin/bot.sh purge
+    0  * * * * cd /path/to/bot && PYTHONPATH="." bin/bot.py monitor
+    55 * * * 0 cd /path/to/bot && PYTHONPATH="." bin/bot.py purge

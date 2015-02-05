@@ -124,6 +124,7 @@ class Bot(object):
         for subreddit in self.cfg.subreddits:
             self.download_new_videos(subreddit)
         self.monitor_deleted_videos()
+        self.make_stale()
 
     @transaction
     def get_subreddit_info(self, sr):
