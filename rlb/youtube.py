@@ -3,7 +3,7 @@ import requests
 import json
 import logging
 import os.path as P
-import subprocess
+import subprocess as sub
 
 logger = logging.getLogger(__name__)
 
@@ -48,18 +48,19 @@ def video_exists(youtube_id, user_agent, developer_key):
 
 
 def download(dest_dir, youtube_id):
-    #
-    # TODO: verbose output on youtube-dl non-zero exit
-    #
     meth_name = "download"
     template = P.join(dest_dir, "%(id)s.%(ext)s")
-    args = ["youtube-dl", "--quiet", "--output", template, "--", youtube_id]
+    args = ["youtube-dl", "--verbose", "--output", template, "--", youtube_id]
     logger.debug("%s: %s", meth_name, " ".join(args))
-    return_code = subprocess.call(args)
-    logger.debug("%s: return_code: %d", meth_name, return_code)
-    if return_code != 0:
+    process = sub.Popen(args, stdin=sub.PIPE, stdout=sub.PIPE,
+                        stderr=sub.STDOUT)
+    stdout, _ = process.communicate()
+    logger.debug("%s: return_code: %d", meth_name, process.returncode)
+    if process.returncode != 0:
+        logger.error("%s: youtube-dl stdout/stderr follows\n%s", meth_name,
+                     stdout)
         logger.error("%s: youtube-dl exited with an error (%d)",
-                     meth_name, return_code)
+                     meth_name, process.returncode)
 
 
 class YoutubeException(Exception):

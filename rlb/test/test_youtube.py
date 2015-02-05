@@ -1,4 +1,5 @@
 import unittest
+import mock
 
 import rlb.main
 import rlb.youtube as youtube
@@ -64,3 +65,22 @@ class TestVideoExists(unittest.TestCase):
         video_id = "Y7UmFIpenjs"
         self.assertFalse(youtube.video_exists(video_id, self.cfg.user_agent,
                                               self.cfg.google_developer_key))
+
+
+#
+# http://www.toptal.com/python/an-introduction-to-mocking-in-python
+# http://alexmarandon.com/articles/python_mock_gotchas/
+#
+class TestDownload(unittest.TestCase):
+
+    @mock.patch("subprocess.Popen")
+    def test_success(self, mock_popen):
+        mock_popen.return_value.communicate.return_value = "stdin", "stdout"
+        mock_popen.return_value.returncode = 0
+        rlb.youtube.download(".", "dummy")
+
+    @mock.patch("subprocess.Popen")
+    def test_failure(self, mock_popen):
+        mock_popen.return_value.communicate.return_value = "stdin", "stdout"
+        mock_popen.return_value.returncode = 1
+        rlb.youtube.download(".", "dummy")

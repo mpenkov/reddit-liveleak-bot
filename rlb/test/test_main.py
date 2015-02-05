@@ -143,16 +143,15 @@ class TestDownloadVideo(unittest.TestCase):
         mock_locate_video.assert_called_once_with(self.bot.cfg.dest_dir, "dl")
         self.assertEquals(v.state, Video.DOWNLOADED)
 
+    @patch("rlb.youtube.download")
     @patch("rlb.main.locate_video")
-    @patch("subprocess.call")
-    def test_new(self, mock_call, mock_locate_video):
-        mock_call.return_value = 0
+    def test_new(self, mock_locate_video, mock_download):
         mock_locate_video.side_effect = [None, "dl.mp4"]
 
         v = self.bot.download_video("dl", "permalink1")
 
-        self.assertEquals(mock_call.call_count, 1)
         self.assertEquals(mock_locate_video.call_count, 2)
+        mock_download.assert_called_once_with(self.bot.cfg.dest_dir, "dl")
         self.assertEquals(v.state, Video.DOWNLOADED)
         self.assertEquals(v.localPath, "dl.mp4")
 
