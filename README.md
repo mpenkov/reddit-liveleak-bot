@@ -46,13 +46,13 @@ Set the absolute path to this database in rlb/conf/config.yml.
 
 The bot runs in two modes: monitor and purge.
 
-    bin/bot.sh monitor
+    PYTHONPATH="." bin/bot.py monitor
 
 In monitor mode, the bot goes through subreddits and picks out submissions with links to YouTube.
 It downloads the videos and registers them in a database.
 If also checks if videos that are already present in the database are still available through YouTube, and if they're not, reposts them to LiveLeak.
 
-    bin/bot.sh purge
+    PYTHONPATH="." bin/bot.py purge
 
 In purge mode, the bot deletes videos that have been in the database for a specific amount of time (to save disk space).
 
@@ -62,3 +62,26 @@ For cron, the following line will monitor every hour and purge every week, respe
 
     0  * * * * cd /path/to/bot && PYTHONPATH="." bin/bot.py monitor
     55 * * * 0 cd /path/to/bot && PYTHONPATH="." bin/bot.py purge
+
+Testing
+-------
+
+For testing, you need [nose](https://nose.readthedocs.org/en/latest/) and [mock](https://pypi.python.org/pypi/mock).
+On Ubuntu, you can install these with:
+
+    sudo pip install nose mock 
+
+To run the unit tests:
+
+    nosetests rlb
+
+To see unit test coverage:
+
+    nosetests . --verbose --with-coverage --cover-html --cover-package=rlb
+
+There is one test that isn't run as part of the command above, since it actually uploads a video to LiveLeak, consuming the upload quota.
+To run that test:
+
+    nosetests rlb/test/test_liveleak.py:TestUpload.test_publish
+
+Once the tests completes, confirm that the video (rlb/test/foreman\_cif.mp4) uploaded correctly, and then delete it so the LiveLeak admins don't have to do it for you.
