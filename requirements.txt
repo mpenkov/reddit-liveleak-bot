@@ -1,0 +1,7 @@
+youtube-dl
+pyyaml
+SQLAlchemy
+praw
+lxml
+requests
+requests-toolbelt

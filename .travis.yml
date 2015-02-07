@@ -1,4 +1,7 @@
 language: python
 python:
   - "2.7"
+install:
+  - "pip -r requirements.txt"
+  - "pip -r requirements-test.txt"
 script: nosetests

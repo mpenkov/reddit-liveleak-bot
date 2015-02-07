@@ -19,10 +19,9 @@ On top of Python 2.7 and its default libraries, you need the following libraries
 
 You also need [youtube-dl](http://rg3.github.io/youtube-dl/).
 
-On Ubuntu, you can install these with:
+You can install these with:
 
-    sudo apt-get install youtube-dl python-yaml python-sqlalchemy
-    sudo pip install praw lxml requests requests-toolbelt
+    pip -r requirements.txt
 
 Update youtube-dl to the latest version:
 
@@ -67,9 +66,9 @@ Testing
 -------
 
 For testing, you need [nose](https://nose.readthedocs.org/en/latest/) and [mock](https://pypi.python.org/pypi/mock).
-On Ubuntu, you can install these with:
+You can install these with:
 
-    sudo pip install nose mock 
+    pip install -r requirements-test.txt
 
 To run the unit tests:
 
